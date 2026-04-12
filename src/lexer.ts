@@ -115,7 +115,7 @@ export class Lexer {
                 token = this.#token(TOKEN.STRING, this.#string());
                 break;
             default:
-                if (this.#isIdentifierChar(this.#char)) {
+                if (this.#isIdentifierStart(this.#char)) {
                     return this.#identifier();
                 } else if (this.#isDigit(this.#char)) {
                     return this.#number();
@@ -147,12 +147,34 @@ export class Lexer {
 
     #string(): string {
         this.#advance(); // skip opening "
-        const start = this.#currentIdx;
+        let result = "";
         while (this.#char !== '"' && this.#char !== "") {
+            if (this.#char === "\\") {
+                this.#advance(); // consume backslash
+                switch (this.#char) {
+                    case "n":
+                        result += "\n";
+                        break;
+                    case "t":
+                        result += "\t";
+                        break;
+                    case '"':
+                        result += '"';
+                        break;
+                    case "\\":
+                        result += "\\";
+                        break;
+                    default:
+                        result += this.#char;
+                        break;
+                }
+            } else {
+                result += this.#char;
+            }
             this.#advance();
         }
-        return this.#input.slice(start, this.#currentIdx);
         // #char is now the closing ", advance() in next() moves past it
+        return result;
     }
 
     #number(): Token {
@@ -198,8 +220,6 @@ export class Lexer {
         }
     }
 
-    // return a token with the next r characters appended to the literal
-    // and advance the position accordingly
     #tokenFromRange(kind: TokenKind, r: number): Token {
         let literal = this.#char;
         for (let i = 0; i < r; i++) {
@@ -209,7 +229,6 @@ export class Lexer {
         return this.#token(kind, literal);
     }
 
-    // read while the callback returns true and return the accumulated string
     #readUntil(pred: (ch: string) => boolean): string {
         let result = "";
         while (pred(this.#char) && this.#char !== "") {
@@ -219,10 +238,7 @@ export class Lexer {
         return result;
     }
 
-    // This checks if char is a valid identifer byte.
-    // If more characters should be supported,
-    // they should be added here in the conditional
-    #isIdentifierChar(ch: string): boolean {
+    #isIdentifierStart(ch: string): boolean {
         return (
             (ch >= "a" && ch <= "z") ||
             (ch >= "A" && ch <= "Z") ||
@@ -234,6 +250,10 @@ export class Lexer {
             ch === "Ø" ||
             ch === "Å"
         );
+    }
+
+    #isIdentifierChar(ch: string): boolean {
+        return this.#isIdentifierStart(ch) || this.#isDigit(ch);
     }
 
     #isDigit(ch: string): boolean {

@@ -209,7 +209,7 @@ hvis (5 < 10) {
             {kind: TOKEN.IDENT, literal: "v"},
             {kind: TOKEN.RPAREN, literal: ")"},
             {kind: TOKEN.ARROW, literal: "=>"},
-            {kind: TOKEN.PRINT, literal: "sig"},
+            {kind: TOKEN.IDENT, literal: "sig"},
             {kind: TOKEN.LPAREN, literal: "("},
             {kind: TOKEN.IDENT, literal: "v"},
             {kind: TOKEN.RPAREN, literal: ")"},
@@ -219,7 +219,7 @@ hvis (5 < 10) {
             {kind: TOKEN.IDENT, literal: "e"},
             {kind: TOKEN.RPAREN, literal: ")"},
             {kind: TOKEN.ARROW, literal: "=>"},
-            {kind: TOKEN.PRINT, literal: "sig"},
+            {kind: TOKEN.IDENT, literal: "sig"},
             {kind: TOKEN.LPAREN, literal: "("},
             {kind: TOKEN.IDENT, literal: "e"},
             {kind: TOKEN.RPAREN, literal: ")"},
@@ -238,7 +238,7 @@ hvis (5 < 10) {
             {kind: TOKEN.OF, literal: "af"},
             {kind: TOKEN.IDENT, literal: "tal"},
             {kind: TOKEN.LBRACE, literal: "{"},
-            {kind: TOKEN.PRINT, literal: "sig"},
+            {kind: TOKEN.IDENT, literal: "sig"},
             {kind: TOKEN.LPAREN, literal: "("},
             {kind: TOKEN.IDENT, literal: "x"},
             {kind: TOKEN.RPAREN, literal: ")"},
@@ -259,7 +259,7 @@ hvis (5 < 10) {
             {kind: TOKEN.OF, literal: "af"},
             {kind: TOKEN.IDENT, literal: "liste"},
             {kind: TOKEN.LBRACE, literal: "{"},
-            {kind: TOKEN.PRINT, literal: "sig"},
+            {kind: TOKEN.IDENT, literal: "sig"},
             {kind: TOKEN.LPAREN, literal: "("},
             {kind: TOKEN.IDENT, literal: "v"},
             {kind: TOKEN.RPAREN, literal: ")"},
@@ -296,26 +296,6 @@ hvis (5 < 10) {
             {kind: TOKEN.ASSIGN, literal: "="},
             {kind: TOKEN.FLOAT, literal: "3.14"},
             {kind: TOKEN.SEMICOLON, literal: ";"},
-            {kind: TOKEN.EOF, literal: ""},
-        ]);
-    });
-
-    it("should lex struct definition", () => {
-        const input = `gemyt Bruger { navn: tekst; alder: tal; }`;
-
-        expectTokens(input, [
-            {kind: TOKEN.STRUCT, literal: "gemyt"},
-            {kind: TOKEN.IDENT, literal: "Bruger"},
-            {kind: TOKEN.LBRACE, literal: "{"},
-            {kind: TOKEN.IDENT, literal: "navn"},
-            {kind: TOKEN.COLON, literal: ":"},
-            {kind: TOKEN.IDENT, literal: "tekst"},
-            {kind: TOKEN.SEMICOLON, literal: ";"},
-            {kind: TOKEN.IDENT, literal: "alder"},
-            {kind: TOKEN.COLON, literal: ":"},
-            {kind: TOKEN.IDENT, literal: "tal"},
-            {kind: TOKEN.SEMICOLON, literal: ";"},
-            {kind: TOKEN.RBRACE, literal: "}"},
             {kind: TOKEN.EOF, literal: ""},
         ]);
     });
@@ -416,5 +396,48 @@ sig(x);`;
         const sig = lexer.next();
         expect(sig.line).toBe(2);
         expect(sig.col).toBe(1);
+    });
+
+    it("should lex identifiers containing digits", () => {
+        const input = `lad x1 = fætter2;`;
+
+        expectTokens(input, [
+            {kind: TOKEN.LET, literal: "lad"},
+            {kind: TOKEN.IDENT, literal: "x1"},
+            {kind: TOKEN.ASSIGN, literal: "="},
+            {kind: TOKEN.IDENT, literal: "fætter2"},
+            {kind: TOKEN.SEMICOLON, literal: ";"},
+            {kind: TOKEN.EOF, literal: ""},
+        ]);
+    });
+
+    it("should not lex a digit-leading token as an identifier", () => {
+        const input = `1x`;
+
+        expectTokens(input, [
+            {kind: TOKEN.INT, literal: "1"},
+            {kind: TOKEN.IDENT, literal: "x"},
+        ]);
+    });
+
+    it("should process string escape sequences", () => {
+        const input = `"hej\\nverden" "tab\\there" "quote\\"end" "backslash\\\\"`;
+
+        expectTokens(input, [
+            {kind: TOKEN.STRING, literal: "hej\nverden"},
+            {kind: TOKEN.STRING, literal: "tab\there"},
+            {kind: TOKEN.STRING, literal: 'quote"end'},
+            {kind: TOKEN.STRING, literal: "backslash\\"},
+            {kind: TOKEN.EOF, literal: ""},
+        ]);
+    });
+
+    it("should pass through unknown escape sequences literally", () => {
+        const input = `"\\z"`;
+
+        expectTokens(input, [
+            {kind: TOKEN.STRING, literal: "z"},
+            {kind: TOKEN.EOF, literal: ""},
+        ]);
     });
 });
