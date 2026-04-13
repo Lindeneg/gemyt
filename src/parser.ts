@@ -461,14 +461,11 @@ export class Parser {
     #parseIfExpression = (): Nullable<Expression> => {
         const expr = makeIfExpression(this.#current);
 
-        if (!this.#expectPeek(TOKEN.LPAREN)) return null;
-
         this.#nextToken();
         const condition = this.#parseExpression(PRECEDENT.LOWEST);
         if (!condition) return null;
         expr.condition = condition;
 
-        if (!this.#expectPeek(TOKEN.RPAREN)) return null;
         if (!this.#expectPeek(TOKEN.LBRACE)) return null;
 
         expr.consequence = this.#parseBlockStatement();
@@ -491,14 +488,11 @@ export class Parser {
     #parseWhileExpression = (): Nullable<Expression> => {
         const expr = makeWhileExpression(this.#current);
 
-        if (!this.#expectPeek(TOKEN.LPAREN)) return null;
-
         this.#nextToken();
         const condition = this.#parseExpression(PRECEDENT.LOWEST);
         if (!condition) return null;
         expr.condition = condition;
 
-        if (!this.#expectPeek(TOKEN.RPAREN)) return null;
         if (!this.#expectPeek(TOKEN.LBRACE)) return null;
 
         expr.body = this.#parseBlockStatement();
@@ -581,19 +575,23 @@ export class Parser {
 
     #parseOkExpression = (): Nullable<Expression> => {
         const expr = makeOkExpression(this.#current);
+        if (!this.#expectPeek(TOKEN.LPAREN)) return null;
         this.#nextToken();
         const value = this.#parseExpression(PRECEDENT.LOWEST);
         if (!value) return null;
         expr.value = value;
+        if (!this.#expectPeek(TOKEN.RPAREN)) return null;
         return expr;
     };
 
     #parseErrExpression = (): Nullable<Expression> => {
         const expr = makeErrExpression(this.#current);
+        if (!this.#expectPeek(TOKEN.LPAREN)) return null;
         this.#nextToken();
         const value = this.#parseExpression(PRECEDENT.LOWEST);
         if (!value) return null;
         expr.value = value;
+        if (!this.#expectPeek(TOKEN.RPAREN)) return null;
         return expr;
     };
 
@@ -627,8 +625,8 @@ export class Parser {
 
     #parseDotExpression = (left: Expression): Nullable<Expression> => {
         const expr = makeDotExpression(this.#current, left);
-        if (!this.#expectPeek(TOKEN.IDENT)) return null;
-        expr.field = makeIdentifier(this.#current);
+        this.#nextToken();
+        expr.field = makeIdentifier(this.#current, this.#current.literal);
         return expr;
     };
 

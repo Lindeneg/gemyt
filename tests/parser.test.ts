@@ -415,7 +415,7 @@ describe("OperatorPrecedence", () => {
 
 describe("IfExpression", () => {
     it("parses hvis without ellers", () => {
-        const program = parse("hvis (x < y) { x }");
+        const program = parse("hvis x < y { x }");
         expect(program.statements).toHaveLength(1);
         const stmt = asExpressionStatement(program.statements[0]);
         expect(stmt.expression.kind).toBe("IfExpression");
@@ -429,7 +429,7 @@ describe("IfExpression", () => {
     });
 
     it("parses hvis med ellers", () => {
-        const program = parse("hvis (x < y) { x } ellers { y }");
+        const program = parse("hvis x < y { x } ellers { y }");
         expect(program.statements).toHaveLength(1);
         const stmt = asExpressionStatement(program.statements[0]);
         const exp = stmt.expression as IfExpression;
@@ -447,16 +447,33 @@ describe("IfExpression", () => {
     });
 
     it("parses chained hvis/ellers hvis", () => {
-        const program = parse("hvis (x < y) { x } ellers hvis (x > y) { y }");
+        const program = parse("hvis x < y { x } ellers hvis x > y { y }");
         const stmt = asExpressionStatement(program.statements[0]);
         const exp = stmt.expression as IfExpression;
         expect(exp.alternative?.kind).toBe("IfExpression");
+    });
+
+    it("also works with parentheses around condition", () => {
+        const program = parse("hvis (x < y) { x }");
+        const stmt = asExpressionStatement(program.statements[0]);
+        const exp = stmt.expression as IfExpression;
+        testInfixExpression(exp.condition, "x", "<", "y");
+    });
+});
+
+describe("WhileExpression (with parens)", () => {
+    it("also works with parentheses around condition", () => {
+        const program = parse("mens (x < 10) { x }");
+        const stmt = asExpressionStatement(program.statements[0]);
+        expect(stmt?.expression.kind).toBe("WhileExpression");
+        const exp = stmt.expression as WhileExpression;
+        testInfixExpression(exp.condition, "x", "<", 10);
     });
 });
 
 describe("WhileExpression", () => {
     it("parses mens", () => {
-        const program = parse("mens (x < 10) { x }");
+        const program = parse("mens x < 10 { x }");
         const stmt = asExpressionStatement(program.statements[0]);
         expect(stmt.expression.kind).toBe("WhileExpression");
         const exp = stmt.expression as WhileExpression;
@@ -562,10 +579,30 @@ describe("DotExpression", () => {
     it("parses obj.field", () => {
         const program = parse("obj.field;");
         const stmt = asExpressionStatement(program.statements[0]);
-        expect(stmt.expression.kind).toBe("DotExpression");
-        const exp = stmt.expression as DotExpression;
-        testIdentifier(exp.left, "obj");
-        expect(exp.field.value).toBe("field");
+        expect(stmt?.expression.kind).toBe("DotExpression");
+        const exp = stmt?.expression as DotExpression;
+        testIdentifier(exp?.left, "obj");
+        expect(exp?.field.value).toBe("field");
+    });
+
+    it("parses r.afklæd()", () => {
+        const program = parse("r.afklæd();");
+        const stmt = asExpressionStatement(program.statements[0]);
+        expect(stmt?.expression.kind).toBe("CallExpression");
+        const call = stmt?.expression as CallExpression;
+        expect(call?.function.kind).toBe("DotExpression");
+        const dot = call?.function as DotExpression;
+        testIdentifier(dot?.left, "r");
+        expect(dot?.field.value).toBe("afklæd");
+        expect(call?.args).toHaveLength(0);
+    });
+
+    it("parses keyword after dot (afklæd is an ident, not a keyword)", () => {
+        const program = parse("result.afklæd();");
+        const stmt = asExpressionStatement(program.statements[0]);
+        const call = stmt?.expression as CallExpression;
+        const dot = call?.function as DotExpression;
+        expect(dot?.field.value).toBe("afklæd");
     });
 });
 
@@ -605,19 +642,19 @@ describe("MatchExpression", () => {
 });
 
 describe("OkExpression", () => {
-    it("parses fint x", () => {
-        const program = parse("fint x;");
+    it("parses fint(x)", () => {
+        const program = parse("fint(x);");
         const stmt = asExpressionStatement(program.statements[0]);
-        expect(stmt.expression.kind).toBe("OkExpression");
-        testIdentifier((stmt.expression as OkExpression).value, "x");
+        expect(stmt?.expression.kind).toBe("OkExpression");
+        testIdentifier((stmt?.expression as OkExpression).value, "x");
     });
 });
 
 describe("ErrExpression", () => {
-    it("parses øv x", () => {
-        const program = parse("øv x;");
+    it("parses øv(x)", () => {
+        const program = parse("øv(x);");
         const stmt = asExpressionStatement(program.statements[0]);
-        expect(stmt.expression.kind).toBe("ErrExpression");
-        testIdentifier((stmt.expression as ErrExpression).value, "x");
+        expect(stmt?.expression.kind).toBe("ErrExpression");
+        testIdentifier((stmt?.expression as ErrExpression).value, "x");
     });
 });

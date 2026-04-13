@@ -269,8 +269,8 @@ hvis (5 < 10) {
         ]);
     });
 
-    it("should lex dot access and bare unwrap", () => {
-        const input = `bruger.navn; r.bare();`;
+    it("should lex dot access and afklæd as identifier", () => {
+        const input = `bruger.navn; r.afklæd();`;
 
         expectTokens(input, [
             {kind: TOKEN.IDENT, literal: "bruger"},
@@ -279,7 +279,7 @@ hvis (5 < 10) {
             {kind: TOKEN.SEMICOLON, literal: ";"},
             {kind: TOKEN.IDENT, literal: "r"},
             {kind: TOKEN.DOT, literal: "."},
-            {kind: TOKEN.UNWRAP, literal: "bare"},
+            {kind: TOKEN.IDENT, literal: "afklæd"},
             {kind: TOKEN.LPAREN, literal: "("},
             {kind: TOKEN.RPAREN, literal: ")"},
             {kind: TOKEN.SEMICOLON, literal: ";"},
