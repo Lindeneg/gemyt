@@ -38,6 +38,7 @@ import {
     type ReturnStatement,
     type BreakStatement,
     type Statement,
+    makeAssignExpression,
 } from "./ast.js";
 import type {Lexer} from "./lexer.js";
 import {TOKEN, tokenName, type Token, type TokenKind} from "./token.js";
@@ -47,17 +48,18 @@ type Nullable<T> = T | null;
 const PRECEDENT = {
     _: 0,
     LOWEST: 1,
-    PIPE: 2,
-    OR: 3,
-    AND: 4,
-    EQUALS: 5,
-    LESSGREATER: 6,
-    SUM: 7,
-    PRODUCT: 8,
-    PREFIX: 9,
-    CALL: 10,
-    DOT: 10,
-    INDEX: 11,
+    ASSIGN: 2,
+    PIPE: 3,
+    OR: 4,
+    AND: 5,
+    EQUALS: 6,
+    LESSGREATER: 7,
+    SUM: 8,
+    PRODUCT: 9,
+    PREFIX: 10,
+    CALL: 11,
+    DOT: 11,
+    INDEX: 12,
 } as const;
 
 const PRECEDENCES: Record<number, number> = {
@@ -68,6 +70,7 @@ const PRECEDENCES: Record<number, number> = {
     [TOKEN.NOT_EQ]: PRECEDENT.EQUALS,
     [TOKEN.LT]: PRECEDENT.LESSGREATER,
     [TOKEN.GT]: PRECEDENT.LESSGREATER,
+    [TOKEN.ASSIGN]: PRECEDENT.ASSIGN,
     [TOKEN.LT_OR_EQ]: PRECEDENT.LESSGREATER,
     [TOKEN.GT_OR_EQ]: PRECEDENT.LESSGREATER,
     [TOKEN.PLUS]: PRECEDENT.SUM,
@@ -134,6 +137,7 @@ export class Parser {
             [TOKEN.OR, this.#parseInfixExpression],
             [TOKEN.LPAREN, this.#parseCallExpression],
             [TOKEN.LBRACKET, this.#parseIndexExpression],
+            [TOKEN.ASSIGN, this.#parseAssignExpression],
             [TOKEN.DOT, this.#parseDotExpression],
             [TOKEN.PIPE, this.#parsePipeExpression],
         ]);
@@ -604,6 +608,23 @@ export class Parser {
         if (!right) return null;
         expr.right = right;
         return expr;
+    };
+
+    #parseAssignExpression = (left: Expression): Nullable<Expression> => {
+        if (
+            left.kind !== "Identifier" &&
+            left.kind !== "DotExpression" &&
+            left.kind !== "IndexExpression"
+        ) {
+            this.#errors.push(
+                `l:${left.token.line}|c:${left.token.col} -> kan ikke tildele til ${left.kind}`
+            );
+            return null;
+        }
+        this.#nextToken();
+        const value = this.#parseExpression(PRECEDENT.ASSIGN - 1);
+        if (!value) return null;
+        return makeAssignExpression(left.token, left, value);
     };
 
     #parseCallExpression = (fn: Expression): Nullable<Expression> => {

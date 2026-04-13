@@ -28,6 +28,7 @@ import type {
     ErrExpression,
     ArrayLiteral,
     DictLiteral,
+    AssignExpression,
     Statement,
 } from "../src/ast.js";
 
@@ -422,6 +423,99 @@ describe("InfixExpression", () => {
             testInfixExpression(stmt.expression, tt.left, tt.op, tt.right);
         });
     }
+});
+
+describe("AssignExpression", () => {
+    it("assigns to an identifier: x = 5", () => {
+        const program = parse("x = 5;");
+        const stmt = asExpressionStatement(program.statements[0]);
+        expect(stmt?.expression.kind).toBe("AssignExpression");
+        const exp = stmt?.expression as AssignExpression;
+        testIdentifier(exp?.target, "x");
+        testIntegerLiteral(exp?.value, 5);
+    });
+
+    it("assigns to a dot expression: obj.field = 10", () => {
+        const program = parse("obj.field = 10;");
+        const stmt = asExpressionStatement(program.statements[0]);
+        const exp = stmt?.expression as AssignExpression;
+        expect(exp?.kind).toBe("AssignExpression");
+        expect(exp?.target.kind).toBe("DotExpression");
+        testIdentifier((exp?.target as DotExpression)?.left, "obj");
+        expect((exp?.target as DotExpression)?.field.value).toBe("field");
+        testIntegerLiteral(exp?.value, 10);
+    });
+
+    it("assigns to an index expression: arr[0] = 99", () => {
+        const program = parse("arr[0] = 99;");
+        const stmt = asExpressionStatement(program.statements[0]);
+        const exp = stmt?.expression as AssignExpression;
+        expect(exp?.kind).toBe("AssignExpression");
+        expect(exp?.target.kind).toBe("IndexExpression");
+        testIdentifier((exp?.target as IndexExpression)?.left, "arr");
+        testIntegerLiteral((exp?.target as IndexExpression)?.index, 0);
+        testIntegerLiteral(exp?.value, 99);
+    });
+
+    it("assigns to a chained dot+index: obj.arr[0] = 42", () => {
+        const program = parse("obj.arr[0] = 42;");
+        const stmt = asExpressionStatement(program.statements[0]);
+        const exp = stmt?.expression as AssignExpression;
+        expect(exp?.kind).toBe("AssignExpression");
+        // target: IndexExpression(DotExpression(obj, arr), 0)
+        const idx = exp?.target as IndexExpression;
+        expect(idx?.kind).toBe("IndexExpression");
+        testIntegerLiteral(idx?.index, 0);
+        const dot = idx?.left as DotExpression;
+        expect(dot?.kind).toBe("DotExpression");
+        testIdentifier(dot?.left, "obj");
+        expect(dot?.field.value).toBe("arr");
+        testIntegerLiteral(exp?.value, 42);
+    });
+
+    it("assigns to a deeply nested target: obj.arr[0].foo.bar.arr2[5] = ja", () => {
+        const program = parse("obj.arr[0].foo.bar.arr2[5] = ja;");
+        const stmt = asExpressionStatement(program.statements[0]);
+        const exp = stmt?.expression as AssignExpression;
+        expect(exp?.kind).toBe("AssignExpression");
+        // outermost target is IndexExpression(...arr2, 5)
+        const outerIdx = exp?.target as IndexExpression;
+        expect(outerIdx?.kind).toBe("IndexExpression");
+        testIntegerLiteral(outerIdx?.index, 5);
+        // left of that index is DotExpression(...bar, arr2)
+        const arr2Dot = outerIdx?.left as DotExpression;
+        expect(arr2Dot?.field.value).toBe("arr2");
+        // left of arr2 is DotExpression(...foo, bar)
+        const barDot = arr2Dot?.left as DotExpression;
+        expect(barDot?.field.value).toBe("bar");
+        // left of bar is DotExpression(...[0], foo)
+        const fooDot = barDot?.left as DotExpression;
+        expect(fooDot?.field.value).toBe("foo");
+        // left of foo is IndexExpression(DotExpression(obj, arr), 0)
+        const innerIdx = fooDot?.left as IndexExpression;
+        expect(innerIdx?.kind).toBe("IndexExpression");
+        testIntegerLiteral(innerIdx?.index, 0);
+        const arrDot = innerIdx?.left as DotExpression;
+        expect(arrDot?.field.value).toBe("arr");
+        testIdentifier(arrDot?.left, "obj");
+        // value is true
+        testBooleanLiteral(exp?.value, true);
+    });
+
+    it("assign value can be an expression: x = a + b", () => {
+        const program = parse("x = a + b;");
+        const stmt = asExpressionStatement(program.statements[0]);
+        const exp = stmt?.expression as AssignExpression;
+        testIdentifier(exp?.target, "x");
+        testInfixExpression(exp?.value, "a", "+", "b");
+    });
+
+    it("rejects assignment to a non-assignable target", () => {
+        const lexer = new Lexer("5 = x;");
+        const parser = new Parser(lexer);
+        parser.parse();
+        expect(parser.errors.length).toBeGreaterThan(0);
+    });
 });
 
 describe("OperatorPrecedence", () => {

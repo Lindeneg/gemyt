@@ -65,6 +65,7 @@ export type Expression =
     | CallExpression
     | IndexExpression
     | DotExpression
+    | AssignExpression
     | PipeExpression
     | MatchExpression
     | OkExpression
@@ -141,6 +142,12 @@ export interface ForEachExpression extends Node {
     index?: Identifier;
     iterable: Expression;
     body: BlockStatement;
+}
+
+export interface AssignExpression extends Node {
+    kind: "AssignExpression";
+    target: Expression;
+    value: Expression;
 }
 
 export interface FunctionLiteral extends Node {
@@ -274,6 +281,14 @@ export function makeExpressionStatement(
     expression: Expression = makeIdentifier()
 ): ExpressionStatement {
     return {kind: "ExpressionStatement", token, expression};
+}
+
+export function makeAssignExpression(
+    token = ZERO_TOKEN,
+    target: Expression = makeIdentifier(),
+    value: Expression = makeIdentifier()
+): AssignExpression {
+    return {kind: "AssignExpression", token, target, value};
 }
 
 export function makePrefixExpression(
@@ -422,6 +437,8 @@ export function stringify(node: Statement | Expression): string {
                 .join(", ");
             return `{${pairs}}`;
         }
+        case "AssignExpression":
+            return `(${stringify(node.target)} = ${stringify(node.value)})`;
         case "PrefixExpression":
             return `(${node.operator}${stringify(node.right)})`;
         case "InfixExpression":
