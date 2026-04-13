@@ -194,6 +194,200 @@ export interface ErrExpression extends Node {
     value: Expression;
 }
 
+const ZERO_TOKEN: Token = {kind: 0, literal: "", line: 0, col: 0};
+
+export function makeProgram(statements: Statement[] = []): Program {
+    return {statements};
+}
+
+export function makeIdentifier(token = ZERO_TOKEN, value = token.literal): Identifier {
+    return {kind: "Identifier", token, value};
+}
+
+export function makeIntegerLiteral(token = ZERO_TOKEN, value = 0): IntegerLiteral {
+    return {kind: "IntegerLiteral", token, value};
+}
+
+export function makeFloatLiteral(token = ZERO_TOKEN, value = 0): FloatLiteral {
+    return {kind: "FloatLiteral", token, value};
+}
+
+export function makeStringLiteral(token = ZERO_TOKEN, value = token.literal): StringLiteral {
+    return {kind: "StringLiteral", token, value};
+}
+
+export function makeBooleanLiteral(token = ZERO_TOKEN, value = false): BooleanLiteral {
+    return {kind: "BooleanLiteral", token, value};
+}
+
+export function makeNullLiteral(token = ZERO_TOKEN): NullLiteral {
+    return {kind: "NullLiteral", token};
+}
+
+export function makeArrayLiteral(token = ZERO_TOKEN, elements: Expression[] = []): ArrayLiteral {
+    return {kind: "ArrayLiteral", token, elements};
+}
+
+export function makeDictLiteral(
+    token = ZERO_TOKEN,
+    pairs: Map<Expression, Expression> = new Map()
+): DictLiteral {
+    return {kind: "DictLiteral", token, pairs};
+}
+
+export function makeBlockStatement(
+    token = ZERO_TOKEN,
+    statements: Statement[] = []
+): BlockStatement {
+    return {kind: "BlockStatement", token, statements};
+}
+
+export function makeLetStatement(
+    token = ZERO_TOKEN,
+    name = makeIdentifier(),
+    value: Expression = makeIdentifier()
+): LetStatement {
+    return {kind: "LetStatement", token, name, value};
+}
+
+export function makeConstStatement(
+    token = ZERO_TOKEN,
+    name = makeIdentifier(),
+    value: Expression = makeIdentifier()
+): ConstStatement {
+    return {kind: "ConstStatement", token, name, value};
+}
+
+export function makeReturnStatement(
+    token = ZERO_TOKEN,
+    value: Expression = makeIdentifier()
+): ReturnStatement {
+    return {kind: "ReturnStatement", token, value};
+}
+
+export function makeBreakStatement(token = ZERO_TOKEN): BreakStatement {
+    return {kind: "BreakStatement", token};
+}
+
+export function makeExpressionStatement(
+    token = ZERO_TOKEN,
+    expression: Expression = makeIdentifier()
+): ExpressionStatement {
+    return {kind: "ExpressionStatement", token, expression};
+}
+
+export function makePrefixExpression(
+    token = ZERO_TOKEN,
+    operator = token.literal,
+    right: Expression = makeIdentifier()
+): PrefixExpression {
+    return {kind: "PrefixExpression", token, operator, right};
+}
+
+export function makeInfixExpression(
+    token = ZERO_TOKEN,
+    left: Expression = makeIdentifier(),
+    operator = token.literal,
+    right: Expression = makeIdentifier()
+): InfixExpression {
+    return {kind: "InfixExpression", token, left, operator, right};
+}
+
+export function makeIfExpression(
+    token = ZERO_TOKEN,
+    condition: Expression = makeIdentifier(),
+    consequence = makeBlockStatement(),
+    alternative?: BlockStatement | IfExpression
+): IfExpression {
+    const expr: IfExpression = {kind: "IfExpression", token, condition, consequence};
+    if (alternative !== undefined) expr.alternative = alternative;
+    return expr;
+}
+
+export function makeWhileExpression(
+    token = ZERO_TOKEN,
+    condition: Expression = makeIdentifier(),
+    body = makeBlockStatement()
+): WhileExpression {
+    return {kind: "WhileExpression", token, condition, body};
+}
+
+export function makeForEachExpression(
+    token = ZERO_TOKEN,
+    value = makeIdentifier(),
+    iterable: Expression = makeIdentifier(),
+    body = makeBlockStatement(),
+    index?: Identifier
+): ForEachExpression {
+    const expr: ForEachExpression = {kind: "ForEachExpression", token, value, iterable, body};
+    if (index !== undefined) expr.index = index;
+    return expr;
+}
+
+export function makeFunctionLiteral(
+    token = ZERO_TOKEN,
+    params: Identifier[] = [],
+    body = makeBlockStatement()
+): FunctionLiteral {
+    return {kind: "FunctionLiteral", token, params, body};
+}
+
+export function makeCallExpression(
+    token = ZERO_TOKEN,
+    fn: Expression = makeIdentifier(),
+    args: Expression[] = []
+): CallExpression {
+    return {kind: "CallExpression", token, function: fn, args};
+}
+
+export function makeIndexExpression(
+    token = ZERO_TOKEN,
+    left: Expression = makeIdentifier(),
+    index: Expression = makeIdentifier()
+): IndexExpression {
+    return {kind: "IndexExpression", token, left, index};
+}
+
+export function makeDotExpression(
+    token = ZERO_TOKEN,
+    left: Expression = makeIdentifier(),
+    field = makeIdentifier()
+): DotExpression {
+    return {kind: "DotExpression", token, left, field};
+}
+
+export function makePipeExpression(
+    token = ZERO_TOKEN,
+    left: Expression = makeIdentifier(),
+    right: Expression = makeIdentifier()
+): PipeExpression {
+    return {kind: "PipeExpression", token, left, right};
+}
+
+export function makeMatchExpression(
+    token = ZERO_TOKEN,
+    subject: Expression = makeIdentifier(),
+    arms: MatchArm[] = []
+): MatchExpression {
+    return {kind: "MatchExpression", token, subject, arms};
+}
+
+export function makeOkExpression(
+    token = ZERO_TOKEN,
+    value: Expression = makeIdentifier()
+): OkExpression {
+    return {kind: "OkExpression", token, value};
+}
+
+export function makeErrExpression(
+    token = ZERO_TOKEN,
+    value: Expression = makeIdentifier()
+): ErrExpression {
+    return {kind: "ErrExpression", token, value};
+}
+
+// Stringify
+
 export function stringify(node: Statement | Expression): string {
     switch (node.kind) {
         case "LetStatement":

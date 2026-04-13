@@ -151,7 +151,8 @@ export class Lexer {
         while (this.#char !== '"' && this.#char !== "") {
             if (this.#char === "\\") {
                 this.#advance(); // consume backslash
-                switch (this.#char) {
+                const c = this.#char as string; // stupid ts
+                switch (c) {
                     case "n":
                         result += "\n";
                         break;
