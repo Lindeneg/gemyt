@@ -151,9 +151,9 @@ describe("ConstStatement", () => {
 
 describe("ReturnStatement", () => {
     const tests: Array<{input: string; value: string | number | boolean}> = [
-        {input: "giv 5;", value: 5},
-        {input: "giv ja;", value: true},
-        {input: "giv foobar;", value: "foobar"},
+        {input: "aflever 5;", value: 5},
+        {input: "aflever ja;", value: true},
+        {input: "aflever foobar;", value: "foobar"},
     ];
 
     for (const tt of tests) {
@@ -164,7 +164,7 @@ describe("ReturnStatement", () => {
             const stmt = program.statements[0];
             expect(stmt.kind).toBe("ReturnStatement");
             const returnStmt = stmt as ReturnStatement;
-            expect(returnStmt.token.literal).toBe("giv");
+            expect(returnStmt.token.literal).toBe("aflever");
             testLiteralExpression(returnStmt.value, tt.value);
         });
     }
@@ -232,8 +232,8 @@ describe("BooleanExpression", () => {
 });
 
 describe("NullLiteral", () => {
-    it("parses intet", () => {
-        const program = parse("intet;");
+    it("parses niks", () => {
+        const program = parse("niks;");
         const stmt = asExpressionStatement(program.statements[0]);
         expect(stmt.expression.kind).toBe("NullLiteral");
     });
@@ -353,6 +353,47 @@ describe("PrefixExpression", () => {
             testLiteralExpression(exp.right, tt.value);
         });
     }
+});
+
+describe("StramExpression", () => {
+    it("stram on a call: stram someFn()", () => {
+        const program = parse("stram someFn();");
+        const stmt = asExpressionStatement(program.statements[0]);
+        expect(stmt?.expression.kind).toBe("PrefixExpression");
+        const exp = stmt?.expression as PrefixExpression;
+        expect(exp?.operator).toBe("stram");
+        expect(exp?.right.kind).toBe("CallExpression");
+    });
+
+    it("stram binding: lad foo = stram someFn()", () => {
+        const program = parse("lad foo = stram someFn();");
+        expect(program.statements).toHaveLength(1);
+        const stmt = program.statements[0] as LetStatement;
+        expect(stmt?.kind).toBe("LetStatement");
+        expect(stmt?.name.value).toBe("foo");
+        expect(stmt?.value.kind).toBe("PrefixExpression");
+        expect((stmt?.value as PrefixExpression)?.operator).toBe("stram");
+    });
+
+    it("stram in an infix: stram a() + stram b()", () => {
+        const program = parse("stram a() + stram b();");
+        const stmt = asExpressionStatement(program.statements[0]);
+        expect(stmt?.expression.kind).toBe("InfixExpression");
+        const infix = stmt?.expression as InfixExpression;
+        expect(infix?.left.kind).toBe("PrefixExpression");
+        expect((infix?.left as PrefixExpression)?.operator).toBe("stram");
+        expect(infix?.right.kind).toBe("PrefixExpression");
+        expect((infix?.right as PrefixExpression)?.operator).toBe("stram");
+    });
+
+    it("stram as a function argument: doSomething(stram getValue())", () => {
+        const program = parse("doSomething(stram getValue());");
+        const stmt = asExpressionStatement(program.statements[0]);
+        const call = stmt?.expression as CallExpression;
+        expect(call?.args).toHaveLength(1);
+        expect(call?.args[0]?.kind).toBe("PrefixExpression");
+        expect((call?.args[0] as PrefixExpression)?.operator).toBe("stram");
+    });
 });
 
 describe("InfixExpression", () => {

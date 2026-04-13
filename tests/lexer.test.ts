@@ -25,9 +25,9 @@ stabil fætter = 5;
 ikke -/*5;
 5 < 10 > 5;
 hvis (5 < 10) {
-  giv ja;
+  aflever ja;
 } ellers {
-  giv nej;
+  aflever nej;
 }
 10 == 10;
 10 != 9;
@@ -112,16 +112,16 @@ hvis (5 < 10) {
             {kind: TOKEN.INT, literal: "10"},
             {kind: TOKEN.RPAREN, literal: ")"},
             {kind: TOKEN.LBRACE, literal: "{"},
-            // giv ja;
-            {kind: TOKEN.RETURN, literal: "giv"},
+            // aflever ja;
+            {kind: TOKEN.RETURN, literal: "aflever"},
             {kind: TOKEN.TRUE, literal: "ja"},
             {kind: TOKEN.SEMICOLON, literal: ";"},
             // } ellers {
             {kind: TOKEN.RBRACE, literal: "}"},
             {kind: TOKEN.ELSE, literal: "ellers"},
             {kind: TOKEN.LBRACE, literal: "{"},
-            // giv nej;
-            {kind: TOKEN.RETURN, literal: "giv"},
+            // aflever nej;
+            {kind: TOKEN.RETURN, literal: "aflever"},
             {kind: TOKEN.FALSE, literal: "nej"},
             {kind: TOKEN.SEMICOLON, literal: ";"},
             // }
@@ -265,6 +265,22 @@ hvis (5 < 10) {
             {kind: TOKEN.RPAREN, literal: ")"},
             {kind: TOKEN.SEMICOLON, literal: ";"},
             {kind: TOKEN.RBRACE, literal: "}"},
+            {kind: TOKEN.EOF, literal: ""},
+        ]);
+    });
+
+    it("should lex stram as a keyword", () => {
+        const input = `stram lad foo = someFn();`;
+
+        expectTokens(input, [
+            {kind: TOKEN.STRAM, literal: "stram"},
+            {kind: TOKEN.LET, literal: "lad"},
+            {kind: TOKEN.IDENT, literal: "foo"},
+            {kind: TOKEN.ASSIGN, literal: "="},
+            {kind: TOKEN.IDENT, literal: "someFn"},
+            {kind: TOKEN.LPAREN, literal: "("},
+            {kind: TOKEN.RPAREN, literal: ")"},
+            {kind: TOKEN.SEMICOLON, literal: ";"},
             {kind: TOKEN.EOF, literal: ""},
         ]);
     });

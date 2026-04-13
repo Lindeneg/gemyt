@@ -109,6 +109,7 @@ export class Parser {
             [TOKEN.LPAREN, this.#parseGroupedExpression],
             [TOKEN.LBRACKET, this.#parseArrayLiteral],
             [TOKEN.LBRACE, this.#parseDictLiteral],
+            [TOKEN.STRAM, this.#parsePrefixExpression],
             [TOKEN.IF, this.#parseIfExpression],
             [TOKEN.FUNCTION, this.#parseFunctionLiteral],
             [TOKEN.WHILE, this.#parseWhileExpression],

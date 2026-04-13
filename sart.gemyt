@@ -1,0 +1,20 @@
+stabil navn = "Christian";
+
+kør v, i af navn {
+    sig(i + ":" + v);
+}
+
+lad i = 0;
+
+mens i < 10 {
+    sig(i);
+    i += 1;
+}
+
+mens ja {
+    hvis i > 20 {
+        sig("bryder: " + i);
+        bryd;
+    }
+    i += 1;
+}

@@ -395,7 +395,7 @@ export function stringify(node: Statement | Expression): string {
         case "ConstStatement":
             return `stabil ${stringify(node.name)} = ${stringify(node.value)};`;
         case "ReturnStatement":
-            return `giv ${stringify(node.value)};`;
+            return `aflever ${stringify(node.value)};`;
         case "BreakStatement":
             return "bryd;";
         case "ExpressionStatement":
@@ -413,7 +413,7 @@ export function stringify(node: Statement | Expression): string {
         case "BooleanLiteral":
             return node.value ? "ja" : "nej";
         case "NullLiteral":
-            return "intet";
+            return "niks";
         case "ArrayLiteral":
             return `[${node.elements.map(stringify).join(", ")}]`;
         case "DictLiteral": {
@@ -427,12 +427,12 @@ export function stringify(node: Statement | Expression): string {
         case "InfixExpression":
             return `(${stringify(node.left)} ${node.operator} ${stringify(node.right)})`;
         case "IfExpression": {
-            let out = `hvis (${stringify(node.condition)}) ${stringify(node.consequence)}`;
+            let out = `hvis ${stringify(node.condition)} ${stringify(node.consequence)}`;
             if (node.alternative) out += ` ellers ${stringify(node.alternative)}`;
             return out;
         }
         case "WhileExpression":
-            return `mens (${stringify(node.condition)}) ${stringify(node.body)}`;
+            return `mens ${stringify(node.condition)} ${stringify(node.body)}`;
         case "ForEachExpression": {
             const idx = node.index ? `, ${stringify(node.index)}` : "";
             return `kør ${stringify(node.value)}${idx} af ${stringify(node.iterable)} ${stringify(node.body)}`;
@@ -454,9 +454,9 @@ export function stringify(node: Statement | Expression): string {
             return `prøv ${stringify(node.subject)} { ${arms} }`;
         }
         case "OkExpression":
-            return `fint ${stringify(node.value)}`;
+            return `fint(${stringify(node.value)})`;
         case "ErrExpression":
-            return `øv ${stringify(node.value)}`;
+            return `øv(${stringify(node.value)})`;
     }
 }
 

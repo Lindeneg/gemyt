@@ -62,10 +62,10 @@ describe("AST stringify", () => {
     it("return statement", () => {
         const stmt: ReturnStatement = {
             kind: "ReturnStatement",
-            token: tok(TOKEN.RETURN, "giv"),
+            token: tok(TOKEN.RETURN, "aflever"),
             value: ident("resultat"),
         };
-        expect(stringify(stmt)).toBe("giv resultat;");
+        expect(stringify(stmt)).toBe("aflever resultat;");
     });
 
     it("function literal and call expression", () => {
@@ -79,7 +79,7 @@ describe("AST stringify", () => {
                 statements: [
                     {
                         kind: "ReturnStatement",
-                        token: tok(TOKEN.RETURN, "giv"),
+                        token: tok(TOKEN.RETURN, "aflever"),
                         value: {
                             kind: "InfixExpression",
                             token: tok(TOKEN.PLUS, "+"),
@@ -99,7 +99,7 @@ describe("AST stringify", () => {
             args: [int(1), int(2)],
         };
 
-        expect(stringify(fn)).toBe("gør(x, y) { giv (x + y); }");
+        expect(stringify(fn)).toBe("gør(x, y) { aflever (x + y); }");
         expect(stringify(call)).toBe("sum(1, 2)");
     });
 
@@ -125,7 +125,7 @@ describe("AST stringify", () => {
                             statements: [
                                 {
                                     kind: "ReturnStatement",
-                                    token: tok(TOKEN.RETURN, "giv"),
+                                    token: tok(TOKEN.RETURN, "aflever"),
                                     value: ident("a"),
                                 } satisfies ReturnStatement,
                             ],
@@ -136,7 +136,7 @@ describe("AST stringify", () => {
                             statements: [
                                 {
                                     kind: "ReturnStatement",
-                                    token: tok(TOKEN.RETURN, "giv"),
+                                    token: tok(TOKEN.RETURN, "aflever"),
                                     value: ident("b"),
                                 } satisfies ReturnStatement,
                             ],
@@ -146,7 +146,7 @@ describe("AST stringify", () => {
             ],
         };
         expect(stringifyProgram(program)).toBe(
-            "hvis ((a < b)) { giv a; } ellers { giv b; };"
+            "hvis (a < b) { aflever a; } ellers { aflever b; };"
         );
     });
 
