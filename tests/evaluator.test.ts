@@ -1,4 +1,7 @@
-import {describe, expect, it} from "vitest";
+import {describe, expect, it, afterEach} from "vitest";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as nodePath from "node:path";
 import {Lexer} from "../src/lexer.js";
 import {Parser} from "../src/parser.js";
 import {evaluateProgram} from "../src/evaluator.js";
@@ -9,6 +12,7 @@ import {
     Sandhed,
     Niks,
     Liste,
+    Ordbog,
     Resultat,
     Fejl,
 } from "../src/object.js";
@@ -295,6 +299,299 @@ describe("builtin: slankekur", () => {
         expect((result as Liste).elements).toHaveLength(0);
     });
     it("requires a liste as first arg", () => expectFejl("slankekur(42, gør(x) { x })", "Liste"));
+});
+
+describe("builtin: tekst (coercion)", () => {
+    it("converts Tal to string", () => expectTekst("tekst(42)", "42"));
+    it("converts Sandhed true to string", () => expectTekst("tekst(ja)", "ja"));
+    it("converts Sandhed false to string", () => expectTekst("tekst(nej)", "nej"));
+    it("converts niks to string", () => expectTekst("tekst(niks)", "niks"));
+    it("returns string as-is", () => expectTekst(`tekst("hej")`, "hej"));
+    it("no argument gives niks string", () => expectTekst("tekst()", "niks"));
+});
+
+describe("builtin: tal (coercion)", () => {
+    it("returns Tal unchanged", () => {
+        const result = evalSource("tal(42)");
+        expect(result).toBeInstanceOf(Tal);
+        expect((result as Tal).value).toBe(42);
+    });
+    it("converts numeric string to fint(Tal)", () => {
+        const result = evalSource(`tal("3.14")`);
+        expect(result).toBeInstanceOf(Resultat);
+        expect((result as Resultat).erFint).toBe(true);
+        expect(((result as Resultat).value as Tal).value).toBe(3.14);
+    });
+    it("invalid string returns øv", () => {
+        const result = evalSource(`tal("ikke_et_tal")`);
+        expect(result).toBeInstanceOf(Resultat);
+        expect((result as Resultat).erFint).toBe(false);
+    });
+    it("true converts to 1", () => expectTal("tal(ja)", 1));
+    it("false converts to 0", () => expectTal("tal(nej)", 0));
+    it("Sandhed conversion is direct Tal, not Resultat", () => {
+        const result = evalSource("tal(ja)");
+        expect(result).toBeInstanceOf(Tal);
+    });
+    it("niks returns øv", () => {
+        const result = evalSource("tal(niks)");
+        expect(result).toBeInstanceOf(Resultat);
+        expect((result as Resultat).erFint).toBe(false);
+    });
+});
+
+describe("builtin: string operations", () => {
+    it("split splits on separator", () => {
+        const result = evalSource(`split("a,b,c", ",")`);
+        expect(result).toBeInstanceOf(Liste);
+        const els = (result as Liste).elements;
+        expect(els).toHaveLength(3);
+        expect((els[0] as Tekst).value).toBe("a");
+        expect((els[2] as Tekst).value).toBe("c");
+    });
+    it("split with empty separator splits every char", () => {
+        const result = evalSource(`split("hej", "")`);
+        expect(result).toBeInstanceOf(Liste);
+        expect((result as Liste).elements).toHaveLength(3);
+    });
+    it("trim removes whitespace", () => expectTekst(`trim("  hej  ")`, "hej"));
+    it("trim leaves clean string alone", () => expectTekst(`trim("hej")`, "hej"));
+    it("indeholder true when present", () => expectSandhed(`indeholder("hej verden", "verden")`, true));
+    it("indeholder false when absent", () => expectSandhed(`indeholder("hej verden", "xyz")`, false));
+    it("starter_med true", () => expectSandhed(`starter_med("hej verden", "hej")`, true));
+    it("starter_med false", () => expectSandhed(`starter_med("hej verden", "verden")`, false));
+    it("ender_med true", () => expectSandhed(`ender_med("hej verden", "verden")`, true));
+    it("ender_med false", () => expectSandhed(`ender_med("hej verden", "hej")`, false));
+    it("erstat replaces all occurrences", () => expectTekst(`erstat("a-b-c", "-", "_")`, "a_b_c"));
+    it("store_bogstaver uppercases", () => expectTekst(`store_bogstaver("hej")`, "HEJ"));
+    it("små_bogstaver lowercases", () => expectTekst(`små_bogstaver("HEJ")`, "hej"));
+    it("split requires tekst args", () => expectFejl("split(42, 1)", "forventer Tekst"));
+    it("trim requires tekst arg", () => expectFejl("trim(42)", "forventer Tekst"));
+});
+
+describe("builtin: path operations", () => {
+    it("sti_join joins segments", () => {
+        const result = evalSource(`sti_join("a", "b", "c")`);
+        expect(result).toBeInstanceOf(Tekst);
+        expect((result as Tekst).value).toBe(nodePath.join("a", "b", "c"));
+    });
+    it("sti_mappe returns dirname", () => {
+        const result = evalSource(`sti_mappe("/some/path/fil.txt")`);
+        expect(result).toBeInstanceOf(Tekst);
+        expect((result as Tekst).value).toBe(nodePath.dirname("/some/path/fil.txt"));
+    });
+    it("sti_filnavn returns basename", () => {
+        expectTekst(`sti_filnavn("/some/path/fil.txt")`, "fil.txt");
+    });
+    it("sti_udvidelse returns extension", () => {
+        expectTekst(`sti_udvidelse("/some/path/fil.txt")`, ".txt");
+    });
+    it("sti_udvidelse empty for no extension", () => {
+        expectTekst(`sti_udvidelse("/some/path/fil")`, "");
+    });
+    it("sti_join requires tekst args", () => expectFejl("sti_join(1, 2)", "forventer Tekst"));
+});
+
+describe("builtin: json", () => {
+    it("fra_json parses object", () => {
+        const result = evalSource(`fra_json("{\\"a\\":1}")`);
+        expect(result).toBeInstanceOf(Resultat);
+        expect((result as Resultat).erFint).toBe(true);
+        expect((result as Resultat).value).toBeInstanceOf(Ordbog);
+    });
+    it("fra_json parses array", () => {
+        const result = evalSource(`fra_json("[1,2,3]")`);
+        expect(result).toBeInstanceOf(Resultat);
+        const inner = (result as Resultat).value;
+        expect(inner).toBeInstanceOf(Liste);
+        expect((inner as Liste).elements).toHaveLength(3);
+    });
+    it("fra_json parses number", () => {
+        const result = evalSource(`fra_json("42")`);
+        expect(result).toBeInstanceOf(Resultat);
+        expect(((result as Resultat).value as Tal).value).toBe(42);
+    });
+    it("fra_json returns øv on invalid JSON", () => {
+        const result = evalSource(`fra_json("ikke json")`);
+        expect(result).toBeInstanceOf(Resultat);
+        expect((result as Resultat).erFint).toBe(false);
+    });
+    it("til_json serializes a Tal", () => expectTekst("til_json(42)", "42"));
+    it("til_json serializes a Tekst", () => expectTekst(`til_json("hej")`, `"hej"`));
+    it("til_json serializes a Liste", () => expectTekst("til_json([1, 2, 3])", "[1,2,3]"));
+    it("til_json serializes niks as null", () => expectTekst("til_json(niks)", "null"));
+    it("til_json no arg gives null", () => expectTekst("til_json()", "null"));
+    it("til_pæn_json produces indented output", () => {
+        const result = evalSource("til_pæn_json([1])");
+        expect(result).toBeInstanceOf(Tekst);
+        expect((result as Tekst).value).toContain("\n");
+    });
+});
+
+describe("builtin: filesystem", () => {
+    let tmpDir: string;
+
+    afterEach(() => {
+        if (tmpDir) fs.rmSync(tmpDir, {recursive: true, force: true});
+    });
+
+    function withTmpDir(fn: (dir: string) => void) {
+        tmpDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), "gemyt-test-"));
+        fn(tmpDir);
+    }
+
+    it("skriv_fil and læs_fil round-trip", () => {
+        withTmpDir((dir) => {
+            const fil = nodePath.join(dir, "test.txt").replace(/\\/g, "/");
+            const result = evalSource(`skriv_fil("${fil}", "hej verden")`);
+            expect(result).toBeInstanceOf(Resultat);
+            expect((result as Resultat).erFint).toBe(true);
+
+            const read = evalSource(`læs_fil("${fil}")`);
+            expect(read).toBeInstanceOf(Resultat);
+            expect(((read as Resultat).value as Tekst).value).toBe("hej verden");
+        });
+    });
+
+    it("tilføj_fil appends content", () => {
+        withTmpDir((dir) => {
+            const fil = nodePath.join(dir, "append.txt").replace(/\\/g, "/");
+            evalSource(`skriv_fil("${fil}", "linje1")`);
+            evalSource(`tilføj_fil("${fil}", "linje2")`);
+            const read = evalSource(`læs_fil("${fil}")`);
+            expect(((read as Resultat).value as Tekst).value).toBe("linje1linje2");
+        });
+    });
+
+    it("læs_fil on missing file returns øv", () => {
+        const result = evalSource(`læs_fil("/findes/ikke/overhovedet.txt")`);
+        expect(result).toBeInstanceOf(Resultat);
+        expect((result as Resultat).erFint).toBe(false);
+    });
+
+    it("findes returns ja for existing file", () => {
+        withTmpDir((dir) => {
+            const fil = nodePath.join(dir, "x.txt").replace(/\\/g, "/");
+            fs.writeFileSync(fil, "x");
+            expectSandhed(`findes("${fil}")`, true);
+        });
+    });
+
+    it("findes returns nej for missing path", () => {
+        expectSandhed(`findes("/dette/findes/ikke")`, false);
+    });
+
+    it("er_fil true for a file", () => {
+        withTmpDir((dir) => {
+            const fil = nodePath.join(dir, "x.txt").replace(/\\/g, "/");
+            fs.writeFileSync(fil, "x");
+            expectSandhed(`er_fil("${fil}")`, true);
+        });
+    });
+
+    it("er_mappe true for a directory", () => {
+        withTmpDir((dir) => {
+            const d = dir.replace(/\\/g, "/");
+            expectSandhed(`er_mappe("${d}")`, true);
+        });
+    });
+
+    it("er_mappe false for a file", () => {
+        withTmpDir((dir) => {
+            const fil = nodePath.join(dir, "x.txt").replace(/\\/g, "/");
+            fs.writeFileSync(fil, "x");
+            expectSandhed(`er_mappe("${fil}")`, false);
+        });
+    });
+
+    it("opret_mappe creates directory", () => {
+        withTmpDir((dir) => {
+            const sub = nodePath.join(dir, "sub", "deep").replace(/\\/g, "/");
+            const result = evalSource(`opret_mappe("${sub}")`);
+            expect(result).toBeInstanceOf(Resultat);
+            expect((result as Resultat).erFint).toBe(true);
+            expect(fs.existsSync(sub)).toBe(true);
+        });
+    });
+
+    it("læs_mappe lists entries", () => {
+        withTmpDir((dir) => {
+            fs.writeFileSync(nodePath.join(dir, "a.txt"), "");
+            fs.writeFileSync(nodePath.join(dir, "b.txt"), "");
+            const d = dir.replace(/\\/g, "/");
+            const result = evalSource(`læs_mappe("${d}")`);
+            expect(result).toBeInstanceOf(Resultat);
+            const inner = (result as Resultat).value;
+            expect(inner).toBeInstanceOf(Liste);
+            expect((inner as Liste).elements).toHaveLength(2);
+        });
+    });
+
+    it("slet removes a file", () => {
+        withTmpDir((dir) => {
+            const fil = nodePath.join(dir, "del.txt").replace(/\\/g, "/");
+            fs.writeFileSync(fil, "x");
+            const result = evalSource(`slet("${fil}")`);
+            expect(result).toBeInstanceOf(Resultat);
+            expect((result as Resultat).erFint).toBe(true);
+            expect(fs.existsSync(fil)).toBe(false);
+        });
+    });
+
+    it("omdøb renames a file", () => {
+        withTmpDir((dir) => {
+            const fra = nodePath.join(dir, "fra.txt").replace(/\\/g, "/");
+            const til = nodePath.join(dir, "til.txt").replace(/\\/g, "/");
+            fs.writeFileSync(fra, "x");
+            const result = evalSource(`omdøb("${fra}", "${til}")`);
+            expect(result).toBeInstanceOf(Resultat);
+            expect((result as Resultat).erFint).toBe(true);
+            expect(fs.existsSync(til)).toBe(true);
+            expect(fs.existsSync(fra)).toBe(false);
+        });
+    });
+
+    it("skriv_fil wrong arg type is fejl", () => {
+        expectFejl("skriv_fil(42, 42)", "forventer Tekst");
+    });
+});
+
+describe("builtin: process", () => {
+    it("cwd returns a string", () => {
+        const result = evalSource("cwd()");
+        expect(result).toBeInstanceOf(Tekst);
+        expect((result as Tekst).value.length).toBeGreaterThan(0);
+    });
+    it("args returns a liste", () => {
+        const result = evalSource("args()");
+        expect(result).toBeInstanceOf(Liste);
+    });
+    it("env returns tekst for set variable", () => {
+        process.env["GEMYT_TEST_VAR"] = "hejsa";
+        const result = evalSource(`env("GEMYT_TEST_VAR")`);
+        expect(result).toBeInstanceOf(Tekst);
+        expect((result as Tekst).value).toBe("hejsa");
+        delete process.env["GEMYT_TEST_VAR"];
+    });
+    it("env returns niks for unset variable", () => {
+        expectNiks(`env("GEMYT_FINDES_IKKE_XYZ")`);
+    });
+    it("env requires tekst arg", () => expectFejl("env(42)", "forventer Tekst"));
+});
+
+describe("builtin: kør_kommando", () => {
+    it("runs a successful command and returns fint(output)", () => {
+        const result = evalSource(`kør_kommando("node --version")`);
+        expect(result).toBeInstanceOf(Resultat);
+        expect((result as Resultat).erFint).toBe(true);
+        expect(((result as Resultat).value as Tekst).value).toMatch(/^v\d+/);
+    });
+    it("failed command returns øv with stderr", () => {
+        const result = evalSource(`kør_kommando("node -e \\"process.exit(1)\\"")`);
+        expect(result).toBeInstanceOf(Resultat);
+        expect((result as Resultat).erFint).toBe(false);
+    });
+    it("requires a tekst arg", () => expectFejl("kør_kommando(42)", "forventer Tekst"));
 });
 
 describe("type errors", () => {
