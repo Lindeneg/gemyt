@@ -1,0 +1,10 @@
+stabil array = [1, 2, 3, 4, 5, 6, 7];
+
+stabil slanktArr = slankekur(array, gør(x) { x - 3 > 0; });
+
+råb(array, array.længde);
+råb(slanktArr, slanktArr.længde);
+
+kør v, i af array {
+    råb(v == array[i]);
+}
