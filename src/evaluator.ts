@@ -1,5 +1,4 @@
 import {type Program, type Statement, type Expression} from "./ast.js";
-import {BUILTINS} from "./builtins.js";
 import {
     type Obj,
     type Environment,
@@ -23,6 +22,39 @@ import {
     getHashKey,
     createEnclosedEnvironment,
 } from "./object.js";
+
+function makeBuiltin(name: string, cb: (...args: Obj[]) => Obj) {
+    return [
+        name,
+        new Indbygget((...args: Obj[]): Obj => {
+            return cb(...args);
+        }, name),
+    ] as const;
+}
+
+const BUILTINS: ReadonlyMap<string, Indbygget> = new Map([
+    makeBuiltin("råb", (...args) => {
+        console.log(args.map((a) => a.tekst()).join(" "));
+        return NIKS;
+    }),
+    makeBuiltin("slankekur", (list, fn) => {
+        if (!(list instanceof Liste)) {
+            return new Fejl(`slankekur kræver en Liste, fik ${list.kind}`);
+        }
+        const result: Obj[] = [];
+        for (const el of list.elements) {
+            const val = applyFunction(fn, [el]);
+            if (erSignal(val)) return val;
+            if (isTruthy(val)) result.push(el);
+        }
+        return new Liste(result);
+    }),
+    //    makeBuiltin("plastik", () => {}),
+    //    makeBuiltin("mos", () => {}),
+    makeBuiltin("type", (obj) => {
+        return new Tekst(obj.kind);
+    }),
+]);
 
 export function evaluateProgram(program: Program, env: Environment): Obj {
     let result: Obj = NIKS;
