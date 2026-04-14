@@ -70,16 +70,35 @@ export class Lexer {
                 }
                 break;
             case "+":
-                token = this.#token(TOKEN.PLUS, this.#char);
+                if (this.#peek() === "=") {
+                    token = this.#tokenFromRange(TOKEN.PLUS_ASSIGN, 1);
+                } else {
+                    token = this.#token(TOKEN.PLUS, this.#char);
+                }
                 break;
             case "-":
-                token = this.#token(TOKEN.MINUS, this.#char);
+                if (this.#peek() === "=") {
+                    token = this.#tokenFromRange(TOKEN.MINUS_ASSIGN, 1);
+                } else {
+                    token = this.#token(TOKEN.MINUS, this.#char);
+                }
                 break;
             case "*":
-                token = this.#token(TOKEN.ASTERISK, this.#char);
+                if (this.#peek() === "=") {
+                    token = this.#tokenFromRange(TOKEN.ASTERISK_ASSIGN, 1);
+                } else {
+                    token = this.#token(TOKEN.ASTERISK, this.#char);
+                }
                 break;
             case "/":
-                token = this.#token(TOKEN.SLASH, this.#char);
+                if (this.#peek() === "=") {
+                    token = this.#tokenFromRange(TOKEN.SLASH_ASSIGN, 1);
+                } else {
+                    token = this.#token(TOKEN.SLASH, this.#char);
+                }
+                break;
+            case "%":
+                token = this.#token(TOKEN.MODULO, this.#char);
                 break;
             case ";":
                 token = this.#token(TOKEN.SEMICOLON, this.#char);

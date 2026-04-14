@@ -1,35 +1,59 @@
-stabil root_path = sti_join(".", "sample");
-stabil sample_file = sti_join(root_path, "sart.gemyt");
+stabil obj = {"foo": gør(x) { aflever x * 2 }};
+
+råb(obj.foo(2));
+
+stabil master_fatman = ["lars", "yanis", "per", "john", "fedte", "ketil"];
+råb(master_fatman, master_fatman.vægt);
+
+stabil slim_shady = slankekur(master_fatman, gør(x) { x.vægt > 4; })
+råb(slim_shady, slim_shady.vægt);
+
+lad i = 0
+mens i < slim_shady.vægt {
+    råb(i, slim_shady[i])
+    i = i + 1
+}
+
+kør v, i af slim_shady {
+    hvis i > 1 {
+        råb("stopper")
+        stop
+    }
+    råb(i, v)
+}
+
+stabil root_path = stig(".", "sample")
+stabil sample_file = stig(root_path, "sart.gemyt")
 
 hvis er_mappe(root_path) {
-    råb(root_path + " findes allerede");
-    afslut(1);
+    råb(root_path + " findes allerede")
+    afslut(1)
 }
 
 hvis er_fil(sample_file) {
-    råb(sample_file + " findes allerede");
-    afslut(1);
+    råb(sample_file + " findes allerede")
+    afslut(1)
 }
 
-opret_mappe(root_path).afklæd();
-skriv_fil(sample_file, "hej med dig").afklæd();
+opret_mappe(root_path).afklæd()
+skriv_fil(sample_file, "hej med dig").afklæd()
 
-lad kilde = læs_fil(sample_file).afklæd();
+lad kilde = stram læs_fil(sample_file)
 
-råb("kilde: " + kilde);
+råb("kilde: " + kilde)
 
-slet(root_path);
+udryd(root_path)
 
-stabil prop = "coltrane";
+lad metal = {"svensker": {"er": øv(0)}, "nordmand": {"er": flot(1).afklæd()}}
 
-lad foo = {"miles": {"davis": "kind of blue"}, prop: 3};
+råb(metal)
+råb(metal.svensker.er.erFint, metal.svensker.er.værdi)
+råb(metal.nordmand.er)
 
-råb(foo);
-råb(foo.miles.davis);
-råb(foo.coltrane);
+stabil json = json_til(metal)
 
-stabil json = til_json(foo);
+råb(json)
+råb(stram json_fra(json))
 
-råb(json);
-råb(stram fra_json(json));
+råb(json_flot(metal))
 

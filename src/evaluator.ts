@@ -56,21 +56,6 @@ const commonBuiltins: BuiltinEntry[] = [
         return NIKS;
     }),
 
-    b("slankekur", (list, fn) => {
-        if (!(list instanceof Liste)) {
-            return new Fejl(`slankekur kræver en Liste, fik ${list.kind}`);
-        }
-        const result: Obj[] = [];
-        for (const el of list.elements) {
-            const val = applyFunction(fn, [el]);
-            if (erSignal(val)) return val;
-            if (isTruthy(val)) result.push(el);
-        }
-        return new Liste(result);
-    }),
-];
-
-const coercionBuiltins: BuiltinEntry[] = [
     b("tekst", (obj) => {
         if (obj === undefined) return new Tekst("niks");
         return new Tekst(obj.tekst());
@@ -88,6 +73,21 @@ const coercionBuiltins: BuiltinEntry[] = [
     }),
 ];
 
+const listeBuiltins: BuiltinEntry[] = [
+    b("slankekur", (list, fn) => {
+        if (!(list instanceof Liste)) {
+            return new Fejl(`slankekur kræver en Liste, fik ${list.kind}`);
+        }
+        const result: Obj[] = [];
+        for (const el of list.elements) {
+            const val = applyFunction(fn, [el]);
+            if (erSignal(val)) return val;
+            if (isTruthy(val)) result.push(el);
+        }
+        return new Liste(result);
+    }),
+];
+
 const ioBuiltins: BuiltinEntry[] = [
     b("råb", (...args) => {
         console.log(args.map((a) => a.tekst()).join(" "));
@@ -95,11 +95,21 @@ const ioBuiltins: BuiltinEntry[] = [
     }),
 
     b("indlæs", () => {
-        // TODO ret lige denne her mester
         try {
-            const buf = Buffer.alloc(1024);
-            const bytesRead = fs.readSync(0, buf, 0, buf.length, null);
-            return new Tekst(buf.toString("utf8", 0, bytesRead).trimEnd());
+            const chunk = Buffer.alloc(4096);
+            let line = "";
+            while (true) {
+                const n = fs.readSync(0, chunk, 0, chunk.length, null);
+                if (n === 0) break;
+                const str = chunk.toString("utf8", 0, n);
+                const nl = str.indexOf("\n");
+                if (nl !== -1) {
+                    line += str.slice(0, nl);
+                    break;
+                }
+                line += str;
+            }
+            return new Tekst(line);
         } catch (e) {
             return øv(`kunne ikke læse input: ${e}`);
         }
@@ -143,7 +153,7 @@ const fsBuiltins: BuiltinEntry[] = [
         }
     }),
 
-    b("slet", (sti) => {
+    b("udryd", (sti) => {
         const s = expectTekst(sti, "slet", 0);
         if (s instanceof Fejl) return s;
         try {
@@ -217,7 +227,7 @@ const fsBuiltins: BuiltinEntry[] = [
 ];
 
 const pathBuiltins: BuiltinEntry[] = [
-    b("sti_join", (...args) => {
+    b("stig", (...args) => {
         const parts: string[] = [];
         for (const arg of args) {
             if (!(arg instanceof Tekst)) return new Fejl(`sti_join forventer Tekst argumenter`);
@@ -226,19 +236,19 @@ const pathBuiltins: BuiltinEntry[] = [
         return new Tekst(path.join(...parts));
     }),
 
-    b("sti_mappe", (sti) => {
+    b("stig_mappe", (sti) => {
         const s = expectTekst(sti, "sti_mappe", 0);
         if (s instanceof Fejl) return s;
         return new Tekst(path.dirname(s.value));
     }),
 
-    b("sti_filnavn", (sti) => {
+    b("stig_fil", (sti) => {
         const s = expectTekst(sti, "sti_filnavn", 0);
         if (s instanceof Fejl) return s;
         return new Tekst(path.basename(s.value));
     }),
 
-    b("sti_udvidelse", (sti) => {
+    b("stig_udvidelse", (sti) => {
         const s = expectTekst(sti, "sti_udvidelse", 0);
         if (s instanceof Fejl) return s;
         return new Tekst(path.extname(s.value));
@@ -246,7 +256,7 @@ const pathBuiltins: BuiltinEntry[] = [
 ];
 
 const shellBuiltins: BuiltinEntry[] = [
-    b("kør_kommando", (cmd) => {
+    b("kommando", (cmd) => {
         const c = expectTekst(cmd, "kør_kommando", 0);
         if (c instanceof Fejl) return c;
         try {
@@ -293,7 +303,7 @@ function gemytToJs(obj: Obj): unknown {
 }
 
 const jsonBuiltins: BuiltinEntry[] = [
-    b("fra_json", (tekst) => {
+    b("json_fra", (tekst) => {
         const s = expectTekst(tekst, "fra_json", 0);
         if (s instanceof Fejl) return s;
         try {
@@ -303,19 +313,19 @@ const jsonBuiltins: BuiltinEntry[] = [
         }
     }),
 
-    b("til_json", (obj) => {
+    b("json_til", (obj) => {
         if (obj === undefined) return new Tekst("null");
         return new Tekst(JSON.stringify(gemytToJs(obj)));
     }),
 
-    b("til_pæn_json", (obj) => {
+    b("json_flot", (obj) => {
         if (obj === undefined) return new Tekst("null");
         return new Tekst(JSON.stringify(gemytToJs(obj), null, 2));
     }),
 ];
 
 const processBuiltins: BuiltinEntry[] = [
-    b("env", (name) => {
+    b("gemyt_env", (name) => {
         const n = expectTekst(name, "env", 0);
         if (n instanceof Fejl) return n;
         const val = process.env[n.value];
@@ -323,31 +333,31 @@ const processBuiltins: BuiltinEntry[] = [
         return new Tekst(val);
     }),
 
-    b("afslut", (kode) => {
+    b("gemyt_afslut", (kode) => {
         if (kode instanceof Tal) {
             process.exit(kode.value);
         }
         process.exit(0);
     }),
 
-    b("args", () => {
+    b("gemyt_args", () => {
         const args = process.argv.slice(2);
         return new Liste(args.map((a) => new Tekst(a)));
     }),
 
-    b("cwd", () => {
+    b("gemyt_cwd", () => {
         return new Tekst(process.cwd());
     }),
 ];
 
 const utilBuiltins: BuiltinEntry[] = [
-    b("type", (obj) => {
+    b("gemyt_type", (obj) => {
         return new Tekst(obj?.kind ?? "Niks");
     }),
 ];
 
 const stringBuiltins: BuiltinEntry[] = [
-    b("split", (tekst, sep) => {
+    b("tekst_split", (tekst, sep) => {
         const t = expectTekst(tekst, "split", 0);
         if (t instanceof Fejl) return t;
         const s = expectTekst(sep, "split", 1);
@@ -355,13 +365,13 @@ const stringBuiltins: BuiltinEntry[] = [
         return new Liste(t.value.split(s.value).map((p) => new Tekst(p)));
     }),
 
-    b("trim", (tekst) => {
+    b("tekst_trim", (tekst) => {
         const t = expectTekst(tekst, "trim", 0);
         if (t instanceof Fejl) return t;
         return new Tekst(t.value.trim());
     }),
 
-    b("indeholder", (tekst, søg) => {
+    b("tekst_søg", (tekst, søg) => {
         const t = expectTekst(tekst, "indeholder", 0);
         if (t instanceof Fejl) return t;
         const s = expectTekst(søg, "indeholder", 1);
@@ -369,7 +379,7 @@ const stringBuiltins: BuiltinEntry[] = [
         return nativeBoolTilObj(t.value.includes(s.value));
     }),
 
-    b("starter_med", (tekst, præfiks) => {
+    b("tekst_starter_med", (tekst, præfiks) => {
         const t = expectTekst(tekst, "starter_med", 0);
         if (t instanceof Fejl) return t;
         const p = expectTekst(præfiks, "starter_med", 1);
@@ -377,7 +387,7 @@ const stringBuiltins: BuiltinEntry[] = [
         return nativeBoolTilObj(t.value.startsWith(p.value));
     }),
 
-    b("ender_med", (tekst, suffiks) => {
+    b("tekst_ender_med", (tekst, suffiks) => {
         const t = expectTekst(tekst, "ender_med", 0);
         if (t instanceof Fejl) return t;
         const s = expectTekst(suffiks, "ender_med", 1);
@@ -385,7 +395,7 @@ const stringBuiltins: BuiltinEntry[] = [
         return nativeBoolTilObj(t.value.endsWith(s.value));
     }),
 
-    b("erstat", (tekst, søg, erstatning) => {
+    b("tekst_erstat", (tekst, søg, erstatning) => {
         const t = expectTekst(tekst, "erstat", 0);
         if (t instanceof Fejl) return t;
         const s = expectTekst(søg, "erstat", 1);
@@ -395,13 +405,13 @@ const stringBuiltins: BuiltinEntry[] = [
         return new Tekst(t.value.replaceAll(s.value, e.value));
     }),
 
-    b("store_bogstaver", (tekst) => {
+    b("tekst_grande", (tekst) => {
         const t = expectTekst(tekst, "store_bogstaver", 0);
         if (t instanceof Fejl) return t;
         return new Tekst(t.value.toUpperCase());
     }),
 
-    b("små_bogstaver", (tekst) => {
+    b("tekst_bitte", (tekst) => {
         const t = expectTekst(tekst, "små_bogstaver", 0);
         if (t instanceof Fejl) return t;
         return new Tekst(t.value.toLowerCase());
@@ -410,7 +420,7 @@ const stringBuiltins: BuiltinEntry[] = [
 
 const BUILTINS: ReadonlyMap<string, Indbygget> = new Map([
     ...commonBuiltins,
-    ...coercionBuiltins,
+    ...listeBuiltins,
     ...ioBuiltins,
     ...fsBuiltins,
     ...pathBuiltins,
@@ -729,6 +739,13 @@ function evalInfixExpression(operator: string, left: Obj, right: Obj): Obj {
     if (left instanceof Tal && right instanceof Tal) {
         return evalTalInfixExpression(operator, left, right);
     }
+    if (
+        operator === "+" &&
+        (left instanceof Tal || left instanceof Tekst) &&
+        (right instanceof Tal || right instanceof Tekst)
+    ) {
+        return new Tekst(left.tekst() + right.tekst());
+    }
     if (left instanceof Tekst && right instanceof Tekst) {
         switch (operator) {
             case "+":
@@ -769,6 +786,9 @@ function evalTalInfixExpression(operator: string, left: Tal, right: Tal): Obj {
         case "/":
             if (right.value === 0) return new Fejl("det kan man da ikke");
             return new Tal(left.value / right.value);
+        case "%":
+            if (right.value === 0) return new Fejl("det kan man da ikke");
+            return new Tal(left.value % right.value);
         case "<":
             return nativeBoolTilObj(left.value < right.value);
         case ">":
@@ -821,10 +841,10 @@ function evalDotExpression(left: Obj, field: string): Obj {
         if (field === "værdi") return left.value;
     }
     if (left instanceof Liste) {
-        if (field === "længde") return new Tal(left.elements.length);
+        if (field === "vægt") return new Tal(left.elements.length);
     }
     if (left instanceof Tekst) {
-        if (field === "længde") return new Tal(left.value.length);
+        if (field === "vægt") return new Tal(left.value.length);
     }
     if (left instanceof Ordbog) {
         const hashKey = `tekst:${field}`;

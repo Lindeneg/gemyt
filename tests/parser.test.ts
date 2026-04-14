@@ -172,8 +172,8 @@ describe("ReturnStatement", () => {
 });
 
 describe("BreakStatement", () => {
-    it("parses bryd", () => {
-        const program = parse("bryd;");
+    it("parses stop", () => {
+        const program = parse("stop;");
         expect(program.statements).toHaveLength(1);
         expect(program.statements[0].kind).toBe("BreakStatement");
     });
@@ -777,8 +777,8 @@ describe("MatchExpression", () => {
 });
 
 describe("OkExpression", () => {
-    it("parses fint(x)", () => {
-        const program = parse("fint(x);");
+    it("parses flot(x)", () => {
+        const program = parse("flot(x);");
         const stmt = asExpressionStatement(program.statements[0]);
         expect(stmt?.expression.kind).toBe("OkExpression");
         testIdentifier((stmt?.expression as OkExpression).value, "x");

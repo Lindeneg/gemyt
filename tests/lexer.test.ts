@@ -196,7 +196,7 @@ hvis (5 < 10) {
 
     it("should lex result pattern with prøv", () => {
         const input = `prøv r {
-  fint(v) => sig(v);
+  flot(v) => sig(v);
   øv(e) => sig(e);
 }`;
 
@@ -204,7 +204,7 @@ hvis (5 < 10) {
             {kind: TOKEN.MATCH, literal: "prøv"},
             {kind: TOKEN.IDENT, literal: "r"},
             {kind: TOKEN.LBRACE, literal: "{"},
-            {kind: TOKEN.OK, literal: "fint"},
+            {kind: TOKEN.OK, literal: "flot"},
             {kind: TOKEN.LPAREN, literal: "("},
             {kind: TOKEN.IDENT, literal: "v"},
             {kind: TOKEN.RPAREN, literal: ")"},
@@ -355,13 +355,13 @@ hvis (5 < 10) {
     });
 
     it("should lex while loop", () => {
-        const input = `mens ja { bryd; }`;
+        const input = `mens ja { stop; }`;
 
         expectTokens(input, [
             {kind: TOKEN.WHILE, literal: "mens"},
             {kind: TOKEN.TRUE, literal: "ja"},
             {kind: TOKEN.LBRACE, literal: "{"},
-            {kind: TOKEN.BREAK, literal: "bryd"},
+            {kind: TOKEN.BREAK, literal: "stop"},
             {kind: TOKEN.SEMICOLON, literal: ";"},
             {kind: TOKEN.RBRACE, literal: "}"},
             {kind: TOKEN.EOF, literal: ""},
@@ -453,6 +453,57 @@ sig(x);`;
 
         expectTokens(input, [
             {kind: TOKEN.STRING, literal: "z"},
+            {kind: TOKEN.EOF, literal: ""},
+        ]);
+    });
+
+    it("should lex compound assignment operators", () => {
+        const input = `x += 1; x -= 2; x *= 3; x /= 4;`;
+
+        expectTokens(input, [
+            {kind: TOKEN.IDENT, literal: "x"},
+            {kind: TOKEN.PLUS_ASSIGN, literal: "+="},
+            {kind: TOKEN.INT, literal: "1"},
+            {kind: TOKEN.SEMICOLON, literal: ";"},
+            {kind: TOKEN.IDENT, literal: "x"},
+            {kind: TOKEN.MINUS_ASSIGN, literal: "-="},
+            {kind: TOKEN.INT, literal: "2"},
+            {kind: TOKEN.SEMICOLON, literal: ";"},
+            {kind: TOKEN.IDENT, literal: "x"},
+            {kind: TOKEN.ASTERISK_ASSIGN, literal: "*="},
+            {kind: TOKEN.INT, literal: "3"},
+            {kind: TOKEN.SEMICOLON, literal: ";"},
+            {kind: TOKEN.IDENT, literal: "x"},
+            {kind: TOKEN.SLASH_ASSIGN, literal: "/="},
+            {kind: TOKEN.INT, literal: "4"},
+            {kind: TOKEN.SEMICOLON, literal: ";"},
+            {kind: TOKEN.EOF, literal: ""},
+        ]);
+    });
+
+    it("should lex modulo operator", () => {
+        const input = `10 % 3`;
+
+        expectTokens(input, [
+            {kind: TOKEN.INT, literal: "10"},
+            {kind: TOKEN.MODULO, literal: "%"},
+            {kind: TOKEN.INT, literal: "3"},
+            {kind: TOKEN.EOF, literal: ""},
+        ]);
+    });
+
+    it("plain + and / are not compound when not followed by =", () => {
+        const input = `a + b; c / d;`;
+
+        expectTokens(input, [
+            {kind: TOKEN.IDENT, literal: "a"},
+            {kind: TOKEN.PLUS, literal: "+"},
+            {kind: TOKEN.IDENT, literal: "b"},
+            {kind: TOKEN.SEMICOLON, literal: ";"},
+            {kind: TOKEN.IDENT, literal: "c"},
+            {kind: TOKEN.SLASH, literal: "/"},
+            {kind: TOKEN.IDENT, literal: "d"},
+            {kind: TOKEN.SEMICOLON, literal: ";"},
             {kind: TOKEN.EOF, literal: ""},
         ]);
     });

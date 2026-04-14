@@ -71,15 +71,27 @@ const PRECEDENCES: Record<number, number> = {
     [TOKEN.LT]: PRECEDENT.LESSGREATER,
     [TOKEN.GT]: PRECEDENT.LESSGREATER,
     [TOKEN.ASSIGN]: PRECEDENT.ASSIGN,
+    [TOKEN.PLUS_ASSIGN]: PRECEDENT.ASSIGN,
+    [TOKEN.MINUS_ASSIGN]: PRECEDENT.ASSIGN,
+    [TOKEN.ASTERISK_ASSIGN]: PRECEDENT.ASSIGN,
+    [TOKEN.SLASH_ASSIGN]: PRECEDENT.ASSIGN,
     [TOKEN.LT_OR_EQ]: PRECEDENT.LESSGREATER,
     [TOKEN.GT_OR_EQ]: PRECEDENT.LESSGREATER,
     [TOKEN.PLUS]: PRECEDENT.SUM,
     [TOKEN.MINUS]: PRECEDENT.SUM,
     [TOKEN.SLASH]: PRECEDENT.PRODUCT,
     [TOKEN.ASTERISK]: PRECEDENT.PRODUCT,
+    [TOKEN.MODULO]: PRECEDENT.PRODUCT,
     [TOKEN.LPAREN]: PRECEDENT.CALL,
     [TOKEN.DOT]: PRECEDENT.DOT,
     [TOKEN.LBRACKET]: PRECEDENT.INDEX,
+};
+
+const COMPOUND_OPS: Partial<Record<number, string>> = {
+    [TOKEN.PLUS_ASSIGN]: "+",
+    [TOKEN.MINUS_ASSIGN]: "-",
+    [TOKEN.ASTERISK_ASSIGN]: "*",
+    [TOKEN.SLASH_ASSIGN]: "/",
 };
 
 type prefixParseFunction = () => Nullable<Expression>;
@@ -127,6 +139,7 @@ export class Parser {
             [TOKEN.MINUS, this.#parseInfixExpression],
             [TOKEN.SLASH, this.#parseInfixExpression],
             [TOKEN.ASTERISK, this.#parseInfixExpression],
+            [TOKEN.MODULO, this.#parseInfixExpression],
             [TOKEN.EQ, this.#parseInfixExpression],
             [TOKEN.NOT_EQ, this.#parseInfixExpression],
             [TOKEN.LT, this.#parseInfixExpression],
@@ -138,6 +151,10 @@ export class Parser {
             [TOKEN.LPAREN, this.#parseCallExpression],
             [TOKEN.LBRACKET, this.#parseIndexExpression],
             [TOKEN.ASSIGN, this.#parseAssignExpression],
+            [TOKEN.PLUS_ASSIGN, this.#parseAssignExpression],
+            [TOKEN.MINUS_ASSIGN, this.#parseAssignExpression],
+            [TOKEN.ASTERISK_ASSIGN, this.#parseAssignExpression],
+            [TOKEN.SLASH_ASSIGN, this.#parseAssignExpression],
             [TOKEN.DOT, this.#parseDotExpression],
             [TOKEN.PIPE, this.#parsePipeExpression],
         ]);
@@ -621,9 +638,14 @@ export class Parser {
             );
             return null;
         }
+        const baseOp = COMPOUND_OPS[this.#current.kind];
+        const assignToken = this.#current;
         this.#nextToken();
-        const value = this.#parseExpression(PRECEDENT.ASSIGN - 1);
-        if (!value) return null;
+        const rhs = this.#parseExpression(PRECEDENT.ASSIGN - 1);
+        if (!rhs) return null;
+        const value = baseOp !== undefined
+            ? makeInfixExpression(assignToken, left, baseOp, rhs)
+            : rhs;
         return makeAssignExpression(left.token, left, value);
     };
 

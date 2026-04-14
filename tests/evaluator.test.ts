@@ -106,7 +106,7 @@ describe("string operations", () => {
     it("concatenation", () => expectTekst(`"hej" + " " + "verden"`, "hej verden"));
     it("string equality", () => expectSandhed(`"abc" == "abc"`, true));
     it("string inequality", () => expectSandhed(`"abc" != "xyz"`, true));
-    it("string length via dot", () => expectTal(`"hej".længde`, 3));
+    it("string length via dot", () => expectTal(`"hej".vægt`, 3));
     it("string index", () => expectTekst(`"hej"[0]`, "h"));
     it("string index out of bounds returns niks", () => expectNiks(`"hej"[99]`));
 });
@@ -138,8 +138,8 @@ describe("mens loop", () => {
     it("accumulates a sum", () =>
         expectTal("lad i = 0; lad s = 0; mens i < 5 { s = s + i; i = i + 1 }; s", 10));
     it("never runs when condition is false", () => expectNiks("mens nej { 42 }"));
-    it("bryd exits early", () => expectTal("lad i = 0; mens ja { bryd }; i", 0));
-    it("bryd returns niks from loop", () => expectNiks("mens ja { bryd }"));
+    it("stop exits early", () => expectTal("lad i = 0; mens ja { stop }; i", 0));
+    it("stop returns niks from loop", () => expectNiks("mens ja { stop }"));
 });
 
 describe("kør forEach loop", () => {
@@ -148,8 +148,8 @@ describe("kør forEach loop", () => {
     it("provides index", () =>
         expectTal("lad idx = 0; kør x, i af [10, 20, 30] { idx = i }; idx", 2));
     it("iterates over a tekst", () => expectTal(`lad n = 0; kør c af "hej" { n = n + 1 }; n`, 3));
-    it("bryd exits early from forEach", () =>
-        expectTal("lad s = 0; kør x af [1, 2, 3] { hvis x == 2 { bryd }; s = s + x }; s", 1));
+    it("stop exits early from forEach", () =>
+        expectTal("lad s = 0; kør x af [1, 2, 3] { hvis x == 2 { stop }; s = s + x }; s", 1));
     it("non-iterable is a fejl", () => expectFejl("kør x af 42 { x }", "itererbar"));
 });
 
@@ -178,8 +178,8 @@ describe("liste", () => {
     it("index access", () => expectTal("[10, 20, 30][1]", 20));
     it("index out of bounds returns niks", () => expectNiks("[1, 2, 3][99]"));
     it("negative index returns niks", () => expectNiks("[1, 2, 3][-1]"));
-    it("length via dot", () => expectTal("[1, 2, 3].længde", 3));
-    it("empty liste length", () => expectTal("[].længde", 0));
+    it("length via dot", () => expectTal("[1, 2, 3].vægt", 3));
+    it("empty liste length", () => expectTal("[].vægt", 0));
     it("assign to index", () => expectTal("lad l = [1, 2, 3]; l[0] = 99; l[0]", 99));
 });
 
@@ -202,9 +202,9 @@ describe("pipe operator", () => {
         expectTal("lad f = gør(x) { x * 2 }; lad g = gør(x) { x + 1 }; 5 |> f |> g", 11));
 });
 
-describe("fint and øv (Resultat)", () => {
-    it("fint wraps a value", () => {
-        const result = evalSource("fint(42)");
+describe("flot and øv (Resultat)", () => {
+    it("flot wraps a value", () => {
+        const result = evalSource("flot(42)");
         expect(result).toBeInstanceOf(Resultat);
         expect((result as Resultat).erFint).toBe(true);
         expect(((result as Resultat).value as Tal).value).toBe(42);
@@ -214,15 +214,15 @@ describe("fint and øv (Resultat)", () => {
         expect(result).toBeInstanceOf(Resultat);
         expect((result as Resultat).erFint).toBe(false);
     });
-    it(".erFint is true for fint", () => expectSandhed("fint(1).erFint", true));
+    it(".erFint is true for flot", () => expectSandhed("flot(1).erFint", true));
     it(".erFint is false for øv", () => expectSandhed(`øv("x").erFint`, false));
-    it(".værdi reads the inner value", () => expectTal("fint(7).værdi", 7));
-    it(".afklæd on fint returns value", () => expectTal("fint(5).afklæd()", 5));
+    it(".værdi reads the inner value", () => expectTal("flot(7).værdi", 7));
+    it(".afklæd on flot returns value", () => expectTal("flot(5).afklæd()", 5));
     it(".afklæd on øv returns fejl", () => expectFejl(`øv("bad").afklæd()`, "afklæd"));
 });
 
 describe("stram propagation", () => {
-    it("stram on fint returns inner value", () => expectTal("stram fint(10)", 10));
+    it("stram on flot returns inner value", () => expectTal("stram flot(10)", 10));
     it("stram on øv propagates as ReturVærdi exiting function", () => {
         const result = evalSource(`
             lad f = gør() {
@@ -235,11 +235,11 @@ describe("stram propagation", () => {
         expect(result).toBeInstanceOf(Resultat);
         expect((result as Resultat).erFint).toBe(false);
     });
-    it("stram on fint inside function continues normally", () =>
+    it("stram on flot inside function continues normally", () =>
         expectTal(
             `
         lad f = gør() {
-            lad r = fint(42);
+            lad r = flot(42);
             lad v = stram r;
             aflever v
         };
@@ -254,10 +254,10 @@ describe("prøv match expressions", () => {
     it("wildcard _ matches anything", () => expectTal("prøv 99 { 1 => 10, _ => 42 }", 42));
     it("identifier arm binds subject", () => expectTal("prøv 7 { x => x + 1 }", 8));
     it("no match returns niks", () => expectNiks("prøv 5 { 1 => 10, 2 => 20 }"));
-    it("matches fint(x) pattern", () =>
-        expectTal("prøv fint(42) { fint(v) => v, øv(e) => 0 }", 42));
+    it("matches flot(x) pattern", () =>
+        expectTal("prøv flot(42) { flot(v) => v, øv(e) => 0 }", 42));
     it("matches øv(x) pattern", () =>
-        expectTekst(`prøv øv("oops") { fint(v) => "ok", øv(e) => e }`, "oops"));
+        expectTekst(`prøv øv("oops") { flot(v) => "ok", øv(e) => e }`, "oops"));
     it("earlier arm wins", () => expectTal("prøv 1 { x => 1, x => 2 }", 1));
 });
 
@@ -276,13 +276,13 @@ describe("builtin: råb", () => {
     it("råb returns niks", () => expectNiks(`råb("hej")`));
 });
 
-describe("builtin: type", () => {
-    it("type of Tal", () => expectTekst("type(42)", "Tal"));
-    it("type of Tekst", () => expectTekst(`type("hej")`, "Tekst"));
-    it("type of Sandhed", () => expectTekst("type(ja)", "Sandhed"));
-    it("type of Niks", () => expectTekst("type(niks)", "Niks"));
-    it("type of Liste", () => expectTekst("type([1,2])", "Liste"));
-    it("type of Ordbog", () => expectTekst(`type({"a":1})`, "Ordbog"));
+describe("builtin: gemyt_type", () => {
+    it("type of Tal", () => expectTekst("gemyt_type(42)", "Tal"));
+    it("type of Tekst", () => expectTekst(`gemyt_type("hej")`, "Tekst"));
+    it("type of Sandhed", () => expectTekst("gemyt_type(ja)", "Sandhed"));
+    it("type of Niks", () => expectTekst("gemyt_type(niks)", "Niks"));
+    it("type of Liste", () => expectTekst("gemyt_type([1,2])", "Liste"));
+    it("type of Ordbog", () => expectTekst(`gemyt_type({"a":1})`, "Ordbog"));
 });
 
 describe("builtin: slankekur", () => {
@@ -316,7 +316,7 @@ describe("builtin: tal (coercion)", () => {
         expect(result).toBeInstanceOf(Tal);
         expect((result as Tal).value).toBe(42);
     });
-    it("converts numeric string to fint(Tal)", () => {
+    it("converts numeric string to flot(Tal)", () => {
         const result = evalSource(`tal("3.14")`);
         expect(result).toBeInstanceOf(Resultat);
         expect((result as Resultat).erFint).toBe(true);
@@ -341,88 +341,88 @@ describe("builtin: tal (coercion)", () => {
 });
 
 describe("builtin: string operations", () => {
-    it("split splits on separator", () => {
-        const result = evalSource(`split("a,b,c", ",")`);
+    it("tekst_split splits on separator", () => {
+        const result = evalSource(`tekst_split("a,b,c", ",")`);
         expect(result).toBeInstanceOf(Liste);
         const els = (result as Liste).elements;
         expect(els).toHaveLength(3);
         expect((els[0] as Tekst).value).toBe("a");
         expect((els[2] as Tekst).value).toBe("c");
     });
-    it("split with empty separator splits every char", () => {
-        const result = evalSource(`split("hej", "")`);
+    it("tekst_split with empty separator splits every char", () => {
+        const result = evalSource(`tekst_split("hej", "")`);
         expect(result).toBeInstanceOf(Liste);
         expect((result as Liste).elements).toHaveLength(3);
     });
-    it("trim removes whitespace", () => expectTekst(`trim("  hej  ")`, "hej"));
-    it("trim leaves clean string alone", () => expectTekst(`trim("hej")`, "hej"));
-    it("indeholder true when present", () => expectSandhed(`indeholder("hej verden", "verden")`, true));
-    it("indeholder false when absent", () => expectSandhed(`indeholder("hej verden", "xyz")`, false));
-    it("starter_med true", () => expectSandhed(`starter_med("hej verden", "hej")`, true));
-    it("starter_med false", () => expectSandhed(`starter_med("hej verden", "verden")`, false));
-    it("ender_med true", () => expectSandhed(`ender_med("hej verden", "verden")`, true));
-    it("ender_med false", () => expectSandhed(`ender_med("hej verden", "hej")`, false));
-    it("erstat replaces all occurrences", () => expectTekst(`erstat("a-b-c", "-", "_")`, "a_b_c"));
-    it("store_bogstaver uppercases", () => expectTekst(`store_bogstaver("hej")`, "HEJ"));
-    it("små_bogstaver lowercases", () => expectTekst(`små_bogstaver("HEJ")`, "hej"));
-    it("split requires tekst args", () => expectFejl("split(42, 1)", "forventer Tekst"));
-    it("trim requires tekst arg", () => expectFejl("trim(42)", "forventer Tekst"));
+    it("tekst_trim removes whitespace", () => expectTekst(`tekst_trim("  hej  ")`, "hej"));
+    it("tekst_trim leaves clean string alone", () => expectTekst(`tekst_trim("hej")`, "hej"));
+    it("tekst_søg true when present", () => expectSandhed(`tekst_søg("hej verden", "verden")`, true));
+    it("tekst_søg false when absent", () => expectSandhed(`tekst_søg("hej verden", "xyz")`, false));
+    it("tekst_starter_med true", () => expectSandhed(`tekst_starter_med("hej verden", "hej")`, true));
+    it("tekst_starter_med false", () => expectSandhed(`tekst_starter_med("hej verden", "verden")`, false));
+    it("tekst_ender_med true", () => expectSandhed(`tekst_ender_med("hej verden", "verden")`, true));
+    it("tekst_ender_med false", () => expectSandhed(`tekst_ender_med("hej verden", "hej")`, false));
+    it("tekst_erstat replaces all occurrences", () => expectTekst(`tekst_erstat("a-b-c", "-", "_")`, "a_b_c"));
+    it("tekst_grande uppercases", () => expectTekst(`tekst_grande("hej")`, "HEJ"));
+    it("tekst_bitte lowercases", () => expectTekst(`tekst_bitte("HEJ")`, "hej"));
+    it("tekst_split requires tekst args", () => expectFejl("tekst_split(42, 1)", "forventer Tekst"));
+    it("tekst_trim requires tekst arg", () => expectFejl("tekst_trim(42)", "forventer Tekst"));
 });
 
 describe("builtin: path operations", () => {
-    it("sti_join joins segments", () => {
-        const result = evalSource(`sti_join("a", "b", "c")`);
+    it("stig joins segments", () => {
+        const result = evalSource(`stig("a", "b", "c")`);
         expect(result).toBeInstanceOf(Tekst);
         expect((result as Tekst).value).toBe(nodePath.join("a", "b", "c"));
     });
-    it("sti_mappe returns dirname", () => {
-        const result = evalSource(`sti_mappe("/some/path/fil.txt")`);
+    it("stig_mappe returns dirname", () => {
+        const result = evalSource(`stig_mappe("/some/path/fil.txt")`);
         expect(result).toBeInstanceOf(Tekst);
         expect((result as Tekst).value).toBe(nodePath.dirname("/some/path/fil.txt"));
     });
-    it("sti_filnavn returns basename", () => {
-        expectTekst(`sti_filnavn("/some/path/fil.txt")`, "fil.txt");
+    it("stig_fil returns basename", () => {
+        expectTekst(`stig_fil("/some/path/fil.txt")`, "fil.txt");
     });
-    it("sti_udvidelse returns extension", () => {
-        expectTekst(`sti_udvidelse("/some/path/fil.txt")`, ".txt");
+    it("stig_udvidelse returns extension", () => {
+        expectTekst(`stig_udvidelse("/some/path/fil.txt")`, ".txt");
     });
-    it("sti_udvidelse empty for no extension", () => {
-        expectTekst(`sti_udvidelse("/some/path/fil")`, "");
+    it("stig_udvidelse empty for no extension", () => {
+        expectTekst(`stig_udvidelse("/some/path/fil")`, "");
     });
-    it("sti_join requires tekst args", () => expectFejl("sti_join(1, 2)", "forventer Tekst"));
+    it("stig requires tekst args", () => expectFejl("stig(1, 2)", "forventer Tekst"));
 });
 
 describe("builtin: json", () => {
-    it("fra_json parses object", () => {
-        const result = evalSource(`fra_json("{\\"a\\":1}")`);
+    it("json_fra parses object", () => {
+        const result = evalSource(`json_fra("{\\"a\\":1}")`);
         expect(result).toBeInstanceOf(Resultat);
         expect((result as Resultat).erFint).toBe(true);
         expect((result as Resultat).value).toBeInstanceOf(Ordbog);
     });
-    it("fra_json parses array", () => {
-        const result = evalSource(`fra_json("[1,2,3]")`);
+    it("json_fra parses array", () => {
+        const result = evalSource(`json_fra("[1,2,3]")`);
         expect(result).toBeInstanceOf(Resultat);
         const inner = (result as Resultat).value;
         expect(inner).toBeInstanceOf(Liste);
         expect((inner as Liste).elements).toHaveLength(3);
     });
-    it("fra_json parses number", () => {
-        const result = evalSource(`fra_json("42")`);
+    it("json_fra parses number", () => {
+        const result = evalSource(`json_fra("42")`);
         expect(result).toBeInstanceOf(Resultat);
         expect(((result as Resultat).value as Tal).value).toBe(42);
     });
-    it("fra_json returns øv on invalid JSON", () => {
-        const result = evalSource(`fra_json("ikke json")`);
+    it("json_fra returns øv on invalid JSON", () => {
+        const result = evalSource(`json_fra("ikke json")`);
         expect(result).toBeInstanceOf(Resultat);
         expect((result as Resultat).erFint).toBe(false);
     });
-    it("til_json serializes a Tal", () => expectTekst("til_json(42)", "42"));
-    it("til_json serializes a Tekst", () => expectTekst(`til_json("hej")`, `"hej"`));
-    it("til_json serializes a Liste", () => expectTekst("til_json([1, 2, 3])", "[1,2,3]"));
-    it("til_json serializes niks as null", () => expectTekst("til_json(niks)", "null"));
-    it("til_json no arg gives null", () => expectTekst("til_json()", "null"));
-    it("til_pæn_json produces indented output", () => {
-        const result = evalSource("til_pæn_json([1])");
+    it("json_til serializes a Tal", () => expectTekst("json_til(42)", "42"));
+    it("json_til serializes a Tekst", () => expectTekst(`json_til("hej")`, `"hej"`));
+    it("json_til serializes a Liste", () => expectTekst("json_til([1, 2, 3])", "[1,2,3]"));
+    it("json_til serializes niks as null", () => expectTekst("json_til(niks)", "null"));
+    it("json_til no arg gives null", () => expectTekst("json_til()", "null"));
+    it("json_flot produces indented output", () => {
+        const result = evalSource("json_flot([1])");
         expect(result).toBeInstanceOf(Tekst);
         expect((result as Tekst).value).toContain("\n");
     });
@@ -527,11 +527,11 @@ describe("builtin: filesystem", () => {
         });
     });
 
-    it("slet removes a file", () => {
+    it("udryd removes a file", () => {
         withTmpDir((dir) => {
             const fil = nodePath.join(dir, "del.txt").replace(/\\/g, "/");
             fs.writeFileSync(fil, "x");
-            const result = evalSource(`slet("${fil}")`);
+            const result = evalSource(`udryd("${fil}")`);
             expect(result).toBeInstanceOf(Resultat);
             expect((result as Resultat).erFint).toBe(true);
             expect(fs.existsSync(fil)).toBe(false);
@@ -557,46 +557,74 @@ describe("builtin: filesystem", () => {
 });
 
 describe("builtin: process", () => {
-    it("cwd returns a string", () => {
-        const result = evalSource("cwd()");
+    it("gemyt_cwd returns a string", () => {
+        const result = evalSource("gemyt_cwd()");
         expect(result).toBeInstanceOf(Tekst);
         expect((result as Tekst).value.length).toBeGreaterThan(0);
     });
-    it("args returns a liste", () => {
-        const result = evalSource("args()");
+    it("gemyt_args returns a liste", () => {
+        const result = evalSource("gemyt_args()");
         expect(result).toBeInstanceOf(Liste);
     });
-    it("env returns tekst for set variable", () => {
+    it("gemyt_env returns tekst for set variable", () => {
         process.env["GEMYT_TEST_VAR"] = "hejsa";
-        const result = evalSource(`env("GEMYT_TEST_VAR")`);
+        const result = evalSource(`gemyt_env("GEMYT_TEST_VAR")`);
         expect(result).toBeInstanceOf(Tekst);
         expect((result as Tekst).value).toBe("hejsa");
         delete process.env["GEMYT_TEST_VAR"];
     });
-    it("env returns niks for unset variable", () => {
-        expectNiks(`env("GEMYT_FINDES_IKKE_XYZ")`);
+    it("gemyt_env returns niks for unset variable", () => {
+        expectNiks(`gemyt_env("GEMYT_FINDES_IKKE_XYZ")`);
     });
-    it("env requires tekst arg", () => expectFejl("env(42)", "forventer Tekst"));
+    it("gemyt_env requires tekst arg", () => expectFejl("gemyt_env(42)", "forventer Tekst"));
 });
 
-describe("builtin: kør_kommando", () => {
-    it("runs a successful command and returns fint(output)", () => {
-        const result = evalSource(`kør_kommando("node --version")`);
+describe("builtin: kommando", () => {
+    it("runs a successful command and returns flot(output)", () => {
+        const result = evalSource(`kommando("node --version")`);
         expect(result).toBeInstanceOf(Resultat);
         expect((result as Resultat).erFint).toBe(true);
         expect(((result as Resultat).value as Tekst).value).toMatch(/^v\d+/);
     });
     it("failed command returns øv with stderr", () => {
-        const result = evalSource(`kør_kommando("node -e \\"process.exit(1)\\"")`);
+        const result = evalSource(`kommando("node -e \\"process.exit(1)\\"")`);
         expect(result).toBeInstanceOf(Resultat);
         expect((result as Resultat).erFint).toBe(false);
     });
-    it("requires a tekst arg", () => expectFejl("kør_kommando(42)", "forventer Tekst"));
+    it("requires a tekst arg", () => expectFejl("kommando(42)", "forventer Tekst"));
 });
 
 describe("type errors", () => {
     it("negate a string is a fejl", () => expectFejl(`-"hej"`, "ukendt operator"));
-    it("add Tal and Tekst is a fejl", () => expectFejl(`1 + "hej"`, "type mismatch"));
     it("call a non-function is a fejl", () => expectFejl("42()", "er ikke en funktion"));
     it("index a Tal is a fejl", () => expectFejl("42[0]", "understøttet"));
+});
+
+describe("modulo operator", () => {
+    it("basic modulo", () => expectTal("10 % 3", 1));
+    it("even division yields zero", () => expectTal("9 % 3", 0));
+    it("modulo with floats", () => expectTal("5.5 % 2", 1.5));
+    it("modulo by zero returns fejl", () => expectFejl("5 % 0", "det kan man"));
+    it("modulo precedence same as multiply", () => expectTal("2 + 10 % 3", 3));
+});
+
+describe("compound assignment", () => {
+    it("+= adds to variable", () => expectTal("lad x = 5; x += 3; x", 8));
+    it("-= subtracts from variable", () => expectTal("lad x = 10; x -= 4; x", 6));
+    it("*= multiplies variable", () => expectTal("lad x = 3; x *= 4; x", 12));
+    it("/= divides variable", () => expectTal("lad x = 10; x /= 2; x", 5));
+    it("+= on list index", () => expectTal("lad l = [1, 2, 3]; l[1] += 10; l[1]", 12));
+    it("+= on ordbog dot field", () => expectTal(`lad o = {"n": 5}; o.n += 1; o.n`, 6));
+    it("+= chained in loop", () =>
+        expectTal("lad s = 0; kør x af [1, 2, 3, 4] { s += x }; s", 10));
+    it("/= by zero returns fejl", () => expectFejl("lad x = 5; x /= 0", "det kan man"));
+});
+
+describe("Tal+Tekst coercion on +", () => {
+    it("Tal + Tekst concatenates", () => expectTekst(`1 + "hej"`, "1hej"));
+    it("Tekst + Tal concatenates", () => expectTekst(`"hej" + 1`, "hej1"));
+    it("Tal + Tal is still arithmetic", () => expectTal("2 + 3", 5));
+    it("Tekst + Tekst is still string concat", () => expectTekst(`"a" + "b"`, "ab"));
+    it("float coerced to string", () => expectTekst(`"pi=" + 3.14`, "pi=3.14"));
+    it("coercion in compound +=", () => expectTekst(`lad s = "tæller: "; s += 42; s`, "tæller: 42"));
 });
