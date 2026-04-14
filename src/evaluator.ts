@@ -812,6 +812,7 @@ function evalDotExpression(left: Obj, field: string): Obj {
             const captured = left;
             return new Indbygget((): Obj => {
                 if (!captured.erFint)
+                    // TODO line/col could be nice here
                     return new Fejl(`afklæd kaldt på øv(${captured.value.tekst()})`);
                 return captured.value;
             }, "afklæd");
