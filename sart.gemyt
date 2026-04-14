@@ -1,10 +1,35 @@
-stabil array = [1, 2, 3, 4, 5, 6, 7];
+stabil root_path = sti_join(".", "sample");
+stabil sample_file = sti_join(root_path, "sart.gemyt");
 
-stabil slanktArr = slankekur(array, gør(x) { x - 3 > 0; });
-
-råb(array, array.længde);
-råb(slanktArr, slanktArr.længde);
-
-kør v, i af array {
-    råb(v == array[i]);
+hvis er_mappe(root_path) {
+    råb(root_path + " findes allerede");
+    afslut(1);
 }
+
+hvis er_fil(sample_file) {
+    råb(sample_file + " findes allerede");
+    afslut(1);
+}
+
+opret_mappe(root_path).afklæd();
+skriv_fil(sample_file, "hej med dig").afklæd();
+
+lad kilde = læs_fil(sample_file).afklæd();
+
+råb("kilde: " + kilde);
+
+slet(root_path);
+
+stabil prop = "coltrane";
+
+lad foo = {"miles": {"davis": "kind of blue"}, prop: 3};
+
+råb(foo);
+råb(foo.miles.davis);
+råb(foo.coltrane);
+
+stabil json = til_json(foo);
+
+råb(json);
+råb(stram fra_json(json));
+

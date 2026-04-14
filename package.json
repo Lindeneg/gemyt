@@ -5,7 +5,8 @@
     "main": "index.js",
     "scripts": {
         "check": "npx tsc --noEmit",
-        "test": "vitest run"
+        "test": "vitest run",
+        "dev": "npx tsx src/index.ts sart.gemyt"
     },
     "keywords": [],
     "author": "",
