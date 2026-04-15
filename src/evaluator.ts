@@ -130,6 +130,10 @@ const commonBuiltins: BuiltinEntry[] = [
 
         return new Liste(tal);
     }),
+    b("afslut", (kode) => {
+        if (kode instanceof Tal) process.exit(kode.value);
+        process.exit(0);
+    }),
 ];
 
 function readLineSync(prompt: string, chars: number): string {
@@ -399,7 +403,17 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
                     }),
                     b("flot", (obj) => {
                         if (obj === undefined) return new Tekst("null");
-                        return new Tekst(JSON.stringify(gemytToJs(obj), null, 2));
+                        let val: unknown;
+                        if (obj instanceof Tekst) {
+                            try {
+                                val = JSON.parse(obj.value);
+                            } catch {
+                                val = obj.value;
+                            }
+                        } else {
+                            val = gemytToJs(obj);
+                        }
+                        return new Tekst(JSON.stringify(val, null, 2));
                     }),
                 ];
             })()
@@ -415,10 +429,6 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
                 const val = process.env[n.value];
                 if (val === undefined) return NIKS;
                 return new Tekst(val);
-            }),
-            b("afslut", (kode) => {
-                if (kode instanceof Tal) process.exit(kode.value);
-                process.exit(0);
             }),
             b("args", () => {
                 return new Liste(process.argv.slice(2).map((a) => new Tekst(a)));
