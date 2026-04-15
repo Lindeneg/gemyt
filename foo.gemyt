@@ -1,0 +1,16 @@
+ud stabil matematik = {
+    "kvadrat": gør(x) { x * x },
+    "halv": gør(x) { x / 2 }
+}
+
+ud stabil lav_tæller = gør() {
+    lad hidden = 0;
+
+    aflever {
+        "værdi": gør() { aflever hidden; },
+        "op": gør() { hidden += 1; },
+        "ned": gør() { hidden -= 1; },
+    };
+
+}
+

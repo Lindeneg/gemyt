@@ -1,7 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import {execSync} from "node:child_process";
-import {type Program, type Statement, type Expression} from "./ast.js";
+import {Lexer} from "./lexer.js";
+import {Parser} from "./parser.js";
+import {
+    type Program,
+    type Statement,
+    type Expression,
+    type ImportStatement,
+    type ExportStatement,
+} from "./ast.js";
 import {
     type Obj,
     type Environment,
@@ -24,10 +32,11 @@ import {
     erSignal,
     getHashKey,
     createEnclosedEnvironment,
+    createEnvironment,
     Niks,
 } from "./object.js";
 
-type BuiltinEntry = readonly [string, Indbygget];
+type BuiltinEntry = readonly [string, Obj];
 
 function b(name: string, fn: (...args: Obj[]) => Obj): BuiltinEntry {
     return [name, new Indbygget(fn, name)] as const;
@@ -39,6 +48,26 @@ function fint(value: Obj): Resultat {
 
 function øv(msg: string): Resultat {
     return new Resultat(new Tekst(msg), false);
+}
+
+export interface ModuleContext {
+    dir: string;
+    exports: Map<string, Obj>;
+    cache: Map<string, Ordbog>;
+    loading: Set<string>;
+}
+
+export function createModuleContext(dir: string): ModuleContext {
+    return {dir, exports: new Map(), cache: new Map(), loading: new Set()};
+}
+
+function makeModuleOrdbog(entries: BuiltinEntry[]): Ordbog {
+    const pairs = new Map<string, OrdbogPair>();
+    for (const [name, val] of entries) {
+        const key = new Tekst(name);
+        pairs.set(key.hashKey(), {key, value: val});
+    }
+    return new Ordbog(pairs);
 }
 
 function expectTekst(arg: Obj | undefined, name: string, pos: number): Tekst | Fejl {
@@ -71,370 +100,498 @@ const commonBuiltins: BuiltinEntry[] = [
         if (obj instanceof Sandhed) return new Tal(obj.value ? 1 : 0);
         return øv(`kan ikke konvertere ${obj.kind} til tal`);
     }),
-];
+    b("række", (fra, til) => {
+        if (fra === undefined) fra = new Tal(0);
+        if (!(fra instanceof Tal)) {
+            return new Fejl("fra skal være et Tal men fik " + fra.kind);
+        }
 
-const listeBuiltins: BuiltinEntry[] = [
-    b("slankekur", (list, fn) => {
-        if (!(list instanceof Liste)) {
-            return new Fejl(`slankekur kræver en Liste, fik ${list.kind}`);
+        if (til === undefined) {
+            til = fra;
+            fra = new Tal(0);
         }
-        const result: Obj[] = [];
-        for (const el of list.elements) {
-            const val = applyFunction(fn, [el]);
-            if (erSignal(val)) return val;
-            if (isTruthy(val)) result.push(el);
+
+        if (!(til instanceof Tal)) {
+            return new Fejl("til skal være et Tal men fik " + til.kind);
         }
-        return new Liste(result);
+
+        if ((fra as Tal).value < 0) {
+            return new Fejl("fra kan ikke være negativ");
+        }
+
+        if ((til as Tal).value < 0) {
+            return new Fejl("til kan ikke være negativ");
+        }
+
+        const tal: Tal[] = [];
+        for (let i = (fra as Tal).value; i < (til as Tal).value; i++) {
+            tal.push(new Tal(i));
+        }
+
+        return new Liste(tal);
     }),
 ];
 
-const ioBuiltins: BuiltinEntry[] = [
-    b("råb", (...args) => {
-        console.log(args.map((a) => a.tekst()).join(" "));
-        return NIKS;
-    }),
+function readLineSync(prompt: string, chars: number): string {
+    process.stdout.write(prompt);
+    const buf = Buffer.alloc(chars * 4);
+    const n = fs.readSync(0, buf, 0, buf.length, null);
+    let end = n;
+    while (end > 0 && (buf[end - 1] === 0x0a || buf[end - 1] === 0x0d)) end--;
+    return buf.toString("utf8", 0, end);
+}
 
-    b("indlæs", () => {
-        try {
-            const chunk = Buffer.alloc(4096);
-            let line = "";
-            while (true) {
-                const n = fs.readSync(0, chunk, 0, chunk.length, null);
-                if (n === 0) break;
-                const str = chunk.toString("utf8", 0, n);
-                const nl = str.indexOf("\n");
-                if (nl !== -1) {
-                    line += str.slice(0, nl);
-                    break;
+const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
+    [
+        "linjer",
+        makeModuleOrdbog([
+            b("spørgsmål", (promptArg, sizeArg): Obj => {
+                const p = promptArg instanceof Tekst ? promptArg.value : "";
+                if (
+                    !(sizeArg instanceof Tal) ||
+                    !Number.isInteger(sizeArg.value) ||
+                    sizeArg.value <= 0
+                ) {
+                    return new Fejl(
+                        "spørgsmål: andet argument skal være et positivt heltal (maks tegn)"
+                    );
                 }
-                line += str;
-            }
-            return new Tekst(line);
-        } catch (e) {
-            return øv(`kunne ikke læse input: ${e}`);
+                return new Tekst(readLineSync(p, sizeArg.value));
+            }),
+            b("tal", (promptArg): Obj => {
+                const p = promptArg instanceof Tekst ? promptArg.value : "";
+                while (true) {
+                    const raw = readLineSync(p, 32);
+                    const n = Number(raw.trim());
+                    if (!isNaN(n)) return new Tal(n);
+                    process.stdout.write(`'${raw}' er ikke et tal, prøv igen\n`);
+                }
+            }),
+            b("bekræft", (promptArg): Obj => {
+                const base = promptArg instanceof Tekst ? promptArg.value : "";
+                const p = base.endsWith(" ") ? base + "(j/n) " : base + " (j/n) ";
+                while (true) {
+                    const raw = readLineSync(p, 4).trim().toLowerCase();
+                    if (raw === "j" || raw === "ja") return new Sandhed(true);
+                    if (raw === "n" || raw === "nej") return new Sandhed(false);
+                    process.stdout.write(`svar med j/ja eller n/nej\n`);
+                }
+            }),
+            b("vælg", (promptArg, mulighederArg): Obj => {
+                const p = promptArg instanceof Tekst ? promptArg.value : "";
+                if (!(mulighederArg instanceof Liste) || mulighederArg.elements.length === 0) {
+                    return new Fejl("vælg: andet argument skal være en ikke-tom Liste");
+                }
+                const items = mulighederArg.elements;
+                const menu = items.map((el, i) => `  ${i + 1}) ${el.tekst()}`).join("\n");
+                while (true) {
+                    process.stdout.write(`${p}\n${menu}\n> `);
+                    const raw = readLineSync("", 8).trim();
+                    const n = parseInt(raw, 10);
+                    if (!isNaN(n) && n >= 1 && n <= items.length) return items[n - 1]!;
+                    process.stdout.write(`vælg et tal mellem 1 og ${items.length}\n`);
+                }
+            }),
+        ]),
+    ],
+
+    [
+        "fil",
+        makeModuleOrdbog([
+            b("læs", (sti) => {
+                const s = expectTekst(sti, "læs", 0);
+                if (s instanceof Fejl) return s;
+                try {
+                    return fint(new Tekst(fs.readFileSync(s.value, "utf8")));
+                } catch (e) {
+                    return øv(`kunne ikke læse '${s.value}': ${(e as Error).message}`);
+                }
+            }),
+            b("skriv", (sti, indhold) => {
+                const s = expectTekst(sti, "skriv", 0);
+                if (s instanceof Fejl) return s;
+                const i = expectTekst(indhold, "skriv", 1);
+                if (i instanceof Fejl) return i;
+                try {
+                    fs.writeFileSync(s.value, i.value, "utf8");
+                    return fint(NIKS);
+                } catch (e) {
+                    return øv(`kunne ikke skrive '${s.value}': ${(e as Error).message}`);
+                }
+            }),
+            b("tilføj", (sti, indhold) => {
+                const s = expectTekst(sti, "tilføj", 0);
+                if (s instanceof Fejl) return s;
+                const i = expectTekst(indhold, "tilføj", 1);
+                if (i instanceof Fejl) return i;
+                try {
+                    fs.appendFileSync(s.value, i.value, "utf8");
+                    return fint(NIKS);
+                } catch (e) {
+                    return øv(`kunne ikke tilføje til '${s.value}': ${(e as Error).message}`);
+                }
+            }),
+            b("udryd", (sti) => {
+                const s = expectTekst(sti, "udryd", 0);
+                if (s instanceof Fejl) return s;
+                try {
+                    fs.rmSync(s.value, {recursive: true, force: true});
+                    return fint(NIKS);
+                } catch (e) {
+                    return øv(`kunne ikke slette '${s.value}': ${(e as Error).message}`);
+                }
+            }),
+            b("læs_mappe", (sti) => {
+                const s = expectTekst(sti, "læs_mappe", 0);
+                if (s instanceof Fejl) return s;
+                try {
+                    const entries = fs.readdirSync(s.value);
+                    return fint(new Liste(entries.map((e) => new Tekst(e))));
+                } catch (e) {
+                    return øv(`kunne ikke læse mappe '${s.value}': ${(e as Error).message}`);
+                }
+            }),
+            b("opret_mappe", (sti) => {
+                const s = expectTekst(sti, "opret_mappe", 0);
+                if (s instanceof Fejl) return s;
+                try {
+                    fs.mkdirSync(s.value, {recursive: true});
+                    return fint(NIKS);
+                } catch (e) {
+                    return øv(`kunne ikke oprette mappe '${s.value}': ${(e as Error).message}`);
+                }
+            }),
+            b("omdøb", (fra, til) => {
+                const f = expectTekst(fra, "omdøb", 0);
+                if (f instanceof Fejl) return f;
+                const t = expectTekst(til, "omdøb", 1);
+                if (t instanceof Fejl) return t;
+                try {
+                    fs.renameSync(f.value, t.value);
+                    return fint(NIKS);
+                } catch (e) {
+                    return øv(`kunne ikke omdøbe '${f.value}': ${(e as Error).message}`);
+                }
+            }),
+            b("findes", (sti) => {
+                const s = expectTekst(sti, "findes", 0);
+                if (s instanceof Fejl) return s;
+                return nativeBoolTilObj(fs.existsSync(s.value));
+            }),
+            b("er_mappe", (sti) => {
+                const s = expectTekst(sti, "er_mappe", 0);
+                if (s instanceof Fejl) return s;
+                try {
+                    return nativeBoolTilObj(fs.statSync(s.value).isDirectory());
+                } catch {
+                    return nativeBoolTilObj(false);
+                }
+            }),
+            b("er_fil", (sti) => {
+                const s = expectTekst(sti, "er_fil", 0);
+                if (s instanceof Fejl) return s;
+                try {
+                    return nativeBoolTilObj(fs.statSync(s.value).isFile());
+                } catch {
+                    return nativeBoolTilObj(false);
+                }
+            }),
+        ]),
+    ],
+
+    [
+        "stig",
+        makeModuleOrdbog([
+            b("vej", (...args) => {
+                const parts: string[] = [];
+                for (const arg of args) {
+                    if (!(arg instanceof Tekst))
+                        return new Fejl(`sti.join forventer Tekst argumenter`);
+                    parts.push(arg.value);
+                }
+                return new Tekst(path.join(...parts));
+            }),
+            b("mappe", (sti) => {
+                const s = expectTekst(sti, "sti.mappe", 0);
+                if (s instanceof Fejl) return s;
+                return new Tekst(path.dirname(s.value));
+            }),
+            b("fil", (sti) => {
+                const s = expectTekst(sti, "sti.fil", 0);
+                if (s instanceof Fejl) return s;
+                return new Tekst(path.basename(s.value));
+            }),
+            b("udvidelse", (sti) => {
+                const s = expectTekst(sti, "sti.udvidelse", 0);
+                if (s instanceof Fejl) return s;
+                return new Tekst(path.extname(s.value));
+            }),
+        ]),
+    ],
+
+    [
+        "kommando",
+        makeModuleOrdbog([
+            b("kør", (cmd) => {
+                const c = expectTekst(cmd, "kommando.kør", 0);
+                if (c instanceof Fejl) return c;
+                try {
+                    const stdout = execSync(c.value, {
+                        encoding: "utf8",
+                        stdio: ["pipe", "pipe", "pipe"],
+                    });
+                    return fint(new Tekst(stdout.trimEnd()));
+                } catch (e: any) {
+                    const stderr = e.stderr?.toString().trimEnd() ?? e.message;
+                    return øv(stderr);
+                }
+            }),
+        ]),
+    ],
+
+    [
+        "json",
+        makeModuleOrdbog(
+            (() => {
+                function jsToGemyt(val: unknown): Obj {
+                    if (val === null || val === undefined) return NIKS;
+                    if (typeof val === "number") return new Tal(val);
+                    if (typeof val === "string") return new Tekst(val);
+                    if (typeof val === "boolean") return nativeBoolTilObj(val);
+                    if (Array.isArray(val)) return new Liste(val.map(jsToGemyt));
+                    if (typeof val === "object") {
+                        const pairs = new Map<string, OrdbogPair>();
+                        for (const [k, v] of Object.entries(val)) {
+                            const key = new Tekst(k);
+                            pairs.set(key.hashKey(), {key, value: jsToGemyt(v)});
+                        }
+                        return new Ordbog(pairs);
+                    }
+                    return NIKS;
+                }
+                function gemytToJs(obj: Obj): unknown {
+                    if (obj instanceof Tal) return obj.value;
+                    if (obj instanceof Tekst) return obj.value;
+                    if (obj instanceof Sandhed) return obj.value;
+                    if (obj instanceof Niks) return null;
+                    if (obj instanceof Liste) return obj.elements.map(gemytToJs);
+                    if (obj instanceof Ordbog) {
+                        const result: Record<string, unknown> = {};
+                        for (const [, pair] of obj.pairs)
+                            result[pair.key.tekst()] = gemytToJs(pair.value);
+                        return result;
+                    }
+                    return null;
+                }
+                return [
+                    b("fra", (tekst) => {
+                        const s = expectTekst(tekst, "json.fra", 0);
+                        if (s instanceof Fejl) return s;
+                        try {
+                            return fint(jsToGemyt(JSON.parse(s.value)));
+                        } catch (e) {
+                            return øv(`ugyldig JSON: ${(e as Error).message}`);
+                        }
+                    }),
+                    b("til", (obj) => {
+                        if (obj === undefined) return new Tekst("null");
+                        return new Tekst(JSON.stringify(gemytToJs(obj)));
+                    }),
+                    b("flot", (obj) => {
+                        if (obj === undefined) return new Tekst("null");
+                        return new Tekst(JSON.stringify(gemytToJs(obj), null, 2));
+                    }),
+                ];
+            })()
+        ),
+    ],
+
+    [
+        "gemyt",
+        makeModuleOrdbog([
+            b("env", (name) => {
+                const n = expectTekst(name, "gemyt.env", 0);
+                if (n instanceof Fejl) return n;
+                const val = process.env[n.value];
+                if (val === undefined) return NIKS;
+                return new Tekst(val);
+            }),
+            b("afslut", (kode) => {
+                if (kode instanceof Tal) process.exit(kode.value);
+                process.exit(0);
+            }),
+            b("args", () => {
+                return new Liste(process.argv.slice(2).map((a) => new Tekst(a)));
+            }),
+            b("cwd", () => new Tekst(process.cwd())),
+            b("type", (obj) => new Tekst(obj?.kind ?? "Niks")),
+        ]),
+    ],
+
+    [
+        "tekst",
+        makeModuleOrdbog([
+            b("split", (tekst, sep) => {
+                const t = expectTekst(tekst, "tekst.split", 0);
+                if (t instanceof Fejl) return t;
+                const s = expectTekst(sep, "tekst.split", 1);
+                if (s instanceof Fejl) return s;
+                return new Liste(t.value.split(s.value).map((p) => new Tekst(p)));
+            }),
+            b("trim", (tekst) => {
+                const t = expectTekst(tekst, "tekst.trim", 0);
+                if (t instanceof Fejl) return t;
+                return new Tekst(t.value.trim());
+            }),
+            b("søg", (tekst, søg) => {
+                const t = expectTekst(tekst, "tekst.søg", 0);
+                if (t instanceof Fejl) return t;
+                const s = expectTekst(søg, "tekst.søg", 1);
+                if (s instanceof Fejl) return s;
+                return nativeBoolTilObj(t.value.includes(s.value));
+            }),
+            b("starter_med", (tekst, præfiks) => {
+                const t = expectTekst(tekst, "tekst.starter_med", 0);
+                if (t instanceof Fejl) return t;
+                const p = expectTekst(præfiks, "tekst.starter_med", 1);
+                if (p instanceof Fejl) return p;
+                return nativeBoolTilObj(t.value.startsWith(p.value));
+            }),
+            b("ender_med", (tekst, suffiks) => {
+                const t = expectTekst(tekst, "tekst.ender_med", 0);
+                if (t instanceof Fejl) return t;
+                const s = expectTekst(suffiks, "tekst.ender_med", 1);
+                if (s instanceof Fejl) return s;
+                return nativeBoolTilObj(t.value.endsWith(s.value));
+            }),
+            b("erstat", (tekst, søg, erstatning) => {
+                const t = expectTekst(tekst, "tekst.erstat", 0);
+                if (t instanceof Fejl) return t;
+                const s = expectTekst(søg, "tekst.erstat", 1);
+                if (s instanceof Fejl) return s;
+                const e = expectTekst(erstatning, "tekst.erstat", 2);
+                if (e instanceof Fejl) return e;
+                return new Tekst(t.value.replaceAll(s.value, e.value));
+            }),
+            b("grande", (tekst) => {
+                const t = expectTekst(tekst, "tekst.grande", 0);
+                if (t instanceof Fejl) return t;
+                return new Tekst(t.value.toUpperCase());
+            }),
+            b("bitte", (tekst) => {
+                const t = expectTekst(tekst, "tekst.bitte", 0);
+                if (t instanceof Fejl) return t;
+                return new Tekst(t.value.toLowerCase());
+            }),
+        ]),
+    ],
+
+    [
+        "liste",
+        makeModuleOrdbog([
+            b("slankekur", (list, fn) => {
+                if (!(list instanceof Liste)) {
+                    return new Fejl(`liste.slankekur kræver en Liste, fik ${list.kind}`);
+                }
+                const result: Obj[] = [];
+                for (const el of list.elements) {
+                    const val = applyFunction(fn, [el]);
+                    if (erSignal(val)) return val;
+                    if (isTruthy(val)) result.push(el);
+                }
+                return new Liste(result);
+            }),
+        ]),
+    ],
+]);
+
+const BUILTINS: ReadonlyMap<string, Obj> = new Map(commonBuiltins);
+
+function handleImport(stmt: ImportStatement, env: Environment, ctx: ModuleContext): Obj {
+    if (stmt.source === "gemyt") {
+        for (const name of stmt.names) {
+            const mod = STDLIB.get(name);
+            if (!mod) return new Fejl(`ukendt standardbibliotekets modul: '${name}'`);
+            env.define(name, mod, false);
         }
-    }),
-];
-
-const fsBuiltins: BuiltinEntry[] = [
-    b("læs_fil", (sti) => {
-        const s = expectTekst(sti, "læs_fil", 0);
-        if (s instanceof Fejl) return s;
-        try {
-            return fint(new Tekst(fs.readFileSync(s.value, "utf8")));
-        } catch (e) {
-            return øv(`kunne ikke læse '${s.value}': ${(e as Error).message}`);
-        }
-    }),
-
-    b("skriv_fil", (sti, indhold) => {
-        const s = expectTekst(sti, "skriv_fil", 0);
-        if (s instanceof Fejl) return s;
-        const i = expectTekst(indhold, "skriv_fil", 1);
-        if (i instanceof Fejl) return i;
-        try {
-            fs.writeFileSync(s.value, i.value, "utf8");
-            return fint(NIKS);
-        } catch (e) {
-            return øv(`kunne ikke skrive '${s.value}': ${(e as Error).message}`);
-        }
-    }),
-
-    b("tilføj_fil", (sti, indhold) => {
-        const s = expectTekst(sti, "tilføj_fil", 0);
-        if (s instanceof Fejl) return s;
-        const i = expectTekst(indhold, "tilføj_fil", 1);
-        if (i instanceof Fejl) return i;
-        try {
-            fs.appendFileSync(s.value, i.value, "utf8");
-            return fint(NIKS);
-        } catch (e) {
-            return øv(`kunne ikke tilføje til '${s.value}': ${(e as Error).message}`);
-        }
-    }),
-
-    b("udryd", (sti) => {
-        const s = expectTekst(sti, "slet", 0);
-        if (s instanceof Fejl) return s;
-        try {
-            fs.rmSync(s.value, {recursive: true, force: true});
-            return fint(NIKS);
-        } catch (e) {
-            return øv(`kunne ikke slette '${s.value}': ${(e as Error).message}`);
-        }
-    }),
-
-    b("læs_mappe", (sti) => {
-        const s = expectTekst(sti, "læs_mappe", 0);
-        if (s instanceof Fejl) return s;
-        try {
-            const entries = fs.readdirSync(s.value);
-            return fint(new Liste(entries.map((e) => new Tekst(e))));
-        } catch (e) {
-            return øv(`kunne ikke læse mappe '${s.value}': ${(e as Error).message}`);
-        }
-    }),
-
-    b("opret_mappe", (sti) => {
-        const s = expectTekst(sti, "opret_mappe", 0);
-        if (s instanceof Fejl) return s;
-        try {
-            fs.mkdirSync(s.value, {recursive: true});
-            return fint(NIKS);
-        } catch (e) {
-            return øv(`kunne ikke oprette mappe '${s.value}': ${(e as Error).message}`);
-        }
-    }),
-
-    b("omdøb", (fra, til) => {
-        const f = expectTekst(fra, "omdøb", 0);
-        if (f instanceof Fejl) return f;
-        const t = expectTekst(til, "omdøb", 1);
-        if (t instanceof Fejl) return t;
-        try {
-            fs.renameSync(f.value, t.value);
-            return fint(NIKS);
-        } catch (e) {
-            return øv(`kunne ikke omdøbe '${f.value}': ${(e as Error).message}`);
-        }
-    }),
-
-    b("findes", (sti) => {
-        const s = expectTekst(sti, "findes", 0);
-        if (s instanceof Fejl) return s;
-        return nativeBoolTilObj(fs.existsSync(s.value));
-    }),
-
-    b("er_mappe", (sti) => {
-        const s = expectTekst(sti, "er_mappe", 0);
-        if (s instanceof Fejl) return s;
-        try {
-            return nativeBoolTilObj(fs.statSync(s.value).isDirectory());
-        } catch {
-            return nativeBoolTilObj(false);
-        }
-    }),
-
-    b("er_fil", (sti) => {
-        const s = expectTekst(sti, "er_fil", 0);
-        if (s instanceof Fejl) return s;
-        try {
-            return nativeBoolTilObj(fs.statSync(s.value).isFile());
-        } catch {
-            return nativeBoolTilObj(false);
-        }
-    }),
-];
-
-const pathBuiltins: BuiltinEntry[] = [
-    b("stig", (...args) => {
-        const parts: string[] = [];
-        for (const arg of args) {
-            if (!(arg instanceof Tekst)) return new Fejl(`sti_join forventer Tekst argumenter`);
-            parts.push(arg.value);
-        }
-        return new Tekst(path.join(...parts));
-    }),
-
-    b("stig_mappe", (sti) => {
-        const s = expectTekst(sti, "sti_mappe", 0);
-        if (s instanceof Fejl) return s;
-        return new Tekst(path.dirname(s.value));
-    }),
-
-    b("stig_fil", (sti) => {
-        const s = expectTekst(sti, "sti_filnavn", 0);
-        if (s instanceof Fejl) return s;
-        return new Tekst(path.basename(s.value));
-    }),
-
-    b("stig_udvidelse", (sti) => {
-        const s = expectTekst(sti, "sti_udvidelse", 0);
-        if (s instanceof Fejl) return s;
-        return new Tekst(path.extname(s.value));
-    }),
-];
-
-const shellBuiltins: BuiltinEntry[] = [
-    b("kommando", (cmd) => {
-        const c = expectTekst(cmd, "kør_kommando", 0);
-        if (c instanceof Fejl) return c;
-        try {
-            const stdout = execSync(c.value, {encoding: "utf8", stdio: ["pipe", "pipe", "pipe"]});
-            return fint(new Tekst(stdout.trimEnd()));
-        } catch (e: any) {
-            const stderr = e.stderr?.toString().trimEnd() ?? e.message;
-            return øv(stderr);
-        }
-    }),
-];
-
-function jsToGemyt(val: unknown): Obj {
-    if (val === null || val === undefined) return NIKS;
-    if (typeof val === "number") return new Tal(val);
-    if (typeof val === "string") return new Tekst(val);
-    if (typeof val === "boolean") return nativeBoolTilObj(val);
-    if (Array.isArray(val)) return new Liste(val.map(jsToGemyt));
-    if (typeof val === "object") {
-        const pairs = new Map<string, OrdbogPair>();
-        for (const [k, v] of Object.entries(val)) {
-            const key = new Tekst(k);
-            pairs.set(key.hashKey(), {key, value: jsToGemyt(v)});
-        }
-        return new Ordbog(pairs);
+        return NIKS;
     }
+
+    if (stmt.source.startsWith("./") || stmt.source.startsWith("../")) {
+        const rawPath = stmt.source.endsWith(".gemyt") ? stmt.source : stmt.source + ".gemyt";
+        const resolved = path.resolve(ctx.dir, rawPath);
+
+        if (ctx.loading.has(resolved)) {
+            return new Fejl(`cirkulær import opdaget: '${resolved}'`);
+        }
+
+        let moduleOrdbog = ctx.cache.get(resolved);
+        if (!moduleOrdbog) {
+            if (!fs.existsSync(resolved)) {
+                return new Fejl(`filen '${resolved}' findes ikke`);
+            }
+
+            ctx.loading.add(resolved);
+
+            const source = fs.readFileSync(resolved, "utf8");
+            const parser = new Parser(new Lexer(source));
+            const prog = parser.parse();
+
+            if (parser.errors.length > 0) {
+                ctx.loading.delete(resolved);
+                return new Fejl(`parserfejl i '${resolved}': ${parser.errors[0]}`);
+            }
+
+            const fileEnv = createEnvironment();
+            const fileCtx: ModuleContext = {
+                dir: path.dirname(resolved),
+                exports: new Map(),
+                cache: ctx.cache,
+                loading: ctx.loading,
+            };
+
+            const result = evaluateProgram(prog, fileEnv, fileCtx);
+            ctx.loading.delete(resolved);
+            if (erFejl(result)) return result;
+
+            const pairs = new Map<string, OrdbogPair>();
+            for (const [k, v] of fileCtx.exports) {
+                const key = new Tekst(k);
+                pairs.set(key.hashKey(), {key, value: v});
+            }
+            moduleOrdbog = new Ordbog(pairs);
+            ctx.cache.set(resolved, moduleOrdbog);
+        }
+
+        for (const name of stmt.names) {
+            const pair = moduleOrdbog.pairs.get(`tekst:${name}`);
+            if (!pair) return new Fejl(`'${name}' er ikke eksporteret fra '${stmt.source}'`);
+            env.define(name, pair.value, false);
+        }
+        return NIKS;
+    }
+
+    return new Fejl(`ukendt importkilde: '${stmt.source}' — brug "gemyt" eller en relativ sti`);
+}
+
+function handleExport(stmt: ExportStatement, env: Environment, ctx: ModuleContext): Obj {
+    const val = evaluate(stmt.value, env);
+    if (erSignal(val)) return val;
+    env.define(stmt.name.value, val, false);
+    ctx.exports.set(stmt.name.value, val);
     return NIKS;
 }
 
-function gemytToJs(obj: Obj): unknown {
-    if (obj instanceof Tal) return obj.value;
-    if (obj instanceof Tekst) return obj.value;
-    if (obj instanceof Sandhed) return obj.value;
-    if (obj instanceof Niks) return null;
-    if (obj instanceof Liste) return obj.elements.map(gemytToJs);
-    if (obj instanceof Ordbog) {
-        const result: Record<string, unknown> = {};
-        for (const [, pair] of obj.pairs) {
-            result[pair.key.tekst()] = gemytToJs(pair.value);
-        }
-        return result;
-    }
-    return null;
-}
-
-const jsonBuiltins: BuiltinEntry[] = [
-    b("json_fra", (tekst) => {
-        const s = expectTekst(tekst, "fra_json", 0);
-        if (s instanceof Fejl) return s;
-        try {
-            return fint(jsToGemyt(JSON.parse(s.value)));
-        } catch (e) {
-            return øv(`ugyldig JSON: ${(e as Error).message}`);
-        }
-    }),
-
-    b("json_til", (obj) => {
-        if (obj === undefined) return new Tekst("null");
-        return new Tekst(JSON.stringify(gemytToJs(obj)));
-    }),
-
-    b("json_flot", (obj) => {
-        if (obj === undefined) return new Tekst("null");
-        return new Tekst(JSON.stringify(gemytToJs(obj), null, 2));
-    }),
-];
-
-const processBuiltins: BuiltinEntry[] = [
-    b("gemyt_env", (name) => {
-        const n = expectTekst(name, "env", 0);
-        if (n instanceof Fejl) return n;
-        const val = process.env[n.value];
-        if (val === undefined) return NIKS;
-        return new Tekst(val);
-    }),
-
-    b("gemyt_afslut", (kode) => {
-        if (kode instanceof Tal) {
-            process.exit(kode.value);
-        }
-        process.exit(0);
-    }),
-
-    b("gemyt_args", () => {
-        const args = process.argv.slice(2);
-        return new Liste(args.map((a) => new Tekst(a)));
-    }),
-
-    b("gemyt_cwd", () => {
-        return new Tekst(process.cwd());
-    }),
-];
-
-const utilBuiltins: BuiltinEntry[] = [
-    b("gemyt_type", (obj) => {
-        return new Tekst(obj?.kind ?? "Niks");
-    }),
-];
-
-const stringBuiltins: BuiltinEntry[] = [
-    b("tekst_split", (tekst, sep) => {
-        const t = expectTekst(tekst, "split", 0);
-        if (t instanceof Fejl) return t;
-        const s = expectTekst(sep, "split", 1);
-        if (s instanceof Fejl) return s;
-        return new Liste(t.value.split(s.value).map((p) => new Tekst(p)));
-    }),
-
-    b("tekst_trim", (tekst) => {
-        const t = expectTekst(tekst, "trim", 0);
-        if (t instanceof Fejl) return t;
-        return new Tekst(t.value.trim());
-    }),
-
-    b("tekst_søg", (tekst, søg) => {
-        const t = expectTekst(tekst, "indeholder", 0);
-        if (t instanceof Fejl) return t;
-        const s = expectTekst(søg, "indeholder", 1);
-        if (s instanceof Fejl) return s;
-        return nativeBoolTilObj(t.value.includes(s.value));
-    }),
-
-    b("tekst_starter_med", (tekst, præfiks) => {
-        const t = expectTekst(tekst, "starter_med", 0);
-        if (t instanceof Fejl) return t;
-        const p = expectTekst(præfiks, "starter_med", 1);
-        if (p instanceof Fejl) return p;
-        return nativeBoolTilObj(t.value.startsWith(p.value));
-    }),
-
-    b("tekst_ender_med", (tekst, suffiks) => {
-        const t = expectTekst(tekst, "ender_med", 0);
-        if (t instanceof Fejl) return t;
-        const s = expectTekst(suffiks, "ender_med", 1);
-        if (s instanceof Fejl) return s;
-        return nativeBoolTilObj(t.value.endsWith(s.value));
-    }),
-
-    b("tekst_erstat", (tekst, søg, erstatning) => {
-        const t = expectTekst(tekst, "erstat", 0);
-        if (t instanceof Fejl) return t;
-        const s = expectTekst(søg, "erstat", 1);
-        if (s instanceof Fejl) return s;
-        const e = expectTekst(erstatning, "erstat", 2);
-        if (e instanceof Fejl) return e;
-        return new Tekst(t.value.replaceAll(s.value, e.value));
-    }),
-
-    b("tekst_grande", (tekst) => {
-        const t = expectTekst(tekst, "store_bogstaver", 0);
-        if (t instanceof Fejl) return t;
-        return new Tekst(t.value.toUpperCase());
-    }),
-
-    b("tekst_bitte", (tekst) => {
-        const t = expectTekst(tekst, "små_bogstaver", 0);
-        if (t instanceof Fejl) return t;
-        return new Tekst(t.value.toLowerCase());
-    }),
-];
-
-const BUILTINS: ReadonlyMap<string, Indbygget> = new Map([
-    ...commonBuiltins,
-    ...listeBuiltins,
-    ...ioBuiltins,
-    ...fsBuiltins,
-    ...pathBuiltins,
-    ...shellBuiltins,
-    ...jsonBuiltins,
-    ...processBuiltins,
-    ...utilBuiltins,
-    ...stringBuiltins,
-]);
-
-export function evaluateProgram(program: Program, env: Environment): Obj {
+export function evaluateProgram(program: Program, env: Environment, ctx: ModuleContext): Obj {
     let result: Obj = NIKS;
     for (const stmt of program.statements) {
-        result = evaluate(stmt, env);
+        if (stmt.kind === "ImportStatement") {
+            result = handleImport(stmt, env, ctx);
+        } else if (stmt.kind === "ExportStatement") {
+            result = handleExport(stmt, env, ctx);
+        } else {
+            result = evaluate(stmt, env);
+        }
         if (result.kind === OBJ.RETURVÆRDI) return (result as ReturVærdi).value;
         if (erFejl(result)) return result;
     }
@@ -658,6 +815,10 @@ export function evaluate(node: Statement | Expression, env: Environment): Obj {
             if (erSignal(val)) return val;
             return new Resultat(val, false);
         }
+
+        case "ImportStatement":
+        case "ExportStatement":
+            return new Fejl("hent/eksporter kan kun bruges på øverste niveau");
     }
 }
 

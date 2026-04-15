@@ -14,7 +14,9 @@ export type Statement =
     | ReturnStatement
     | BreakStatement
     | ExpressionStatement
-    | BlockStatement;
+    | BlockStatement
+    | ImportStatement
+    | ExportStatement;
 
 export interface LetStatement extends Node {
     kind: "LetStatement";
@@ -45,6 +47,18 @@ export interface ExpressionStatement extends Node {
 export interface BlockStatement extends Node {
     kind: "BlockStatement";
     statements: Statement[];
+}
+
+export interface ImportStatement extends Node {
+    kind: "ImportStatement";
+    names: string[];
+    source: string;
+}
+
+export interface ExportStatement extends Node {
+    kind: "ExportStatement";
+    name: Identifier;
+    value: Expression;
 }
 
 export type Expression =
@@ -276,6 +290,22 @@ export function makeBreakStatement(token = ZERO_TOKEN): BreakStatement {
     return {kind: "BreakStatement", token};
 }
 
+export function makeImportStatement(
+    token = ZERO_TOKEN,
+    names: string[] = [],
+    source = ""
+): ImportStatement {
+    return {kind: "ImportStatement", token, names, source};
+}
+
+export function makeExportStatement(
+    token = ZERO_TOKEN,
+    name = makeIdentifier(),
+    value: Expression = makeIdentifier()
+): ExportStatement {
+    return {kind: "ExportStatement", token, name, value};
+}
+
 export function makeExpressionStatement(
     token = ZERO_TOKEN,
     expression: Expression = makeIdentifier()
@@ -474,6 +504,10 @@ export function stringify(node: Statement | Expression): string {
             return `fint(${stringify(node.value)})`;
         case "ErrExpression":
             return `øv(${stringify(node.value)})`;
+        case "ImportStatement":
+            return `hent ${node.names.join(", ")} fra "${node.source}";`;
+        case "ExportStatement":
+            return `eksporter stabil ${stringify(node.name)} = ${stringify(node.value)};`;
     }
 }
 

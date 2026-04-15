@@ -1,59 +1,75 @@
-stabil obj = {"foo": gør(x) { aflever x * 2 }};
+ind stig, fil, json, liste fra "gemyt"
+ind matematik, lav_tæller fra "./foo.gemyt"
 
-råb(obj.foo(2));
+stabil tæller = lav_tæller()
 
-stabil master_fatman = ["lars", "yanis", "per", "john", "fedte", "ketil"];
-råb(master_fatman, master_fatman.vægt);
-
-stabil slim_shady = slankekur(master_fatman, gør(x) { x.vægt > 4; })
-råb(slim_shady, slim_shady.vægt);
-
-lad i = 0
-mens i < slim_shady.vægt {
-    råb(i, slim_shady[i])
-    i = i + 1
+kør _ af række(3) {
+    råb("op", tæller.op())
 }
 
-kør v, i af slim_shady {
-    hvis i > 1 {
+kør _ af række(10) {
+    råb("ned", tæller.ned())
+}
+
+råb("kvadrat", matematik.kvadrat(tæller.værdi()))
+råb("halv", matematik.halv(tæller.værdi()))
+
+stabil master_fatman = ["lars", "yanis", "per", "john", "fedte", "ketil"]
+råb(master_fatman, master_fatman.vægt)
+
+stabil slim_shady = liste.slankekur(master_fatman, gør(x) { x.vægt > 4; })
+råb(slim_shady, slim_shady.vægt)
+
+kør v, i af master_fatman {
+    råb("kør iter", i, v)
+}
+
+kør i af række(slim_shady.vægt) {
+    råb("kør række", i, slim_shady[i])
+}
+
+lad i = 0
+mens ja {
+    hvis i > 3 {
         råb("stopper")
         stop
     }
-    råb(i, v)
+    råb("mens " + i)
+    i+=1
 }
 
-stabil root_path = stig(".", "sample")
-stabil sample_file = stig(root_path, "sart.gemyt")
+stabil root_path = stig.vej(".", "sample")
+stabil sample_file = stig.vej(root_path, "sart.gemyt")
 
-hvis er_mappe(root_path) {
+hvis fil.er_mappe(root_path) {
     råb(root_path + " findes allerede")
     afslut(1)
 }
 
-hvis er_fil(sample_file) {
+hvis fil.er_fil(sample_file) {
     råb(sample_file + " findes allerede")
     afslut(1)
 }
 
-opret_mappe(root_path).afklæd()
-skriv_fil(sample_file, "hej med dig").afklæd()
+fil.opret_mappe(root_path).afklæd()
+fil.skriv(sample_file, "hej med dig").afklæd()
 
-lad kilde = stram læs_fil(sample_file)
+lad kilde = stram fil.læs(sample_file)
 
 råb("kilde: " + kilde)
 
-udryd(root_path)
+fil.udryd(root_path)
 
-lad metal = {"svensker": {"er": øv(0)}, "nordmand": {"er": flot(1).afklæd()}}
+lad halløj = {"svensker": {"er": øv(0)}, "nordmand": {"er": flot(1).afklæd()}}
 
-råb(metal)
-råb(metal.svensker.er.erFint, metal.svensker.er.værdi)
-råb(metal.nordmand.er)
+råb(halløj)
+råb(halløj.svensker.er.erFint, halløj.svensker.er.værdi)
+råb(halløj.nordmand.er)
 
-stabil json = json_til(metal)
+stabil hejsa = json.til(halløj)
 
-råb(json)
-råb(stram json_fra(json))
+råb(hejsa)
+råb(stram json.fra(hejsa))
 
-råb(json_flot(metal))
+råb(json.flot(hejsa))
 

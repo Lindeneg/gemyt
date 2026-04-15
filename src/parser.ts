@@ -39,6 +39,10 @@ import {
     type BreakStatement,
     type Statement,
     makeAssignExpression,
+    makeImportStatement,
+    makeExportStatement,
+    type ImportStatement,
+    type ExportStatement,
 } from "./ast.js";
 import type {Lexer} from "./lexer.js";
 import {TOKEN, tokenName, type Token, type TokenKind} from "./token.js";
@@ -222,9 +226,55 @@ export class Parser {
                 return this.#parseReturnStatement();
             case TOKEN.BREAK:
                 return this.#parseBreakStatement();
+            case TOKEN.IMPORT:
+                return this.#parseImportStatement();
+            case TOKEN.EXPORT:
+                return this.#parseExportStatement();
             default:
                 return this.#parseExpressionStatement();
         }
+    }
+
+    #parseImportStatement(): Nullable<ImportStatement> {
+        const tok = this.#current;
+        const names: string[] = [];
+
+        if (!this.#expectPeek(TOKEN.IDENT)) return null;
+        names.push(this.#current.literal);
+
+        while (this.#next.kind === TOKEN.COMMA) {
+            this.#nextToken();
+            if (!this.#expectPeek(TOKEN.IDENT)) return null;
+            names.push(this.#current.literal);
+        }
+
+        if (!this.#expectPeek(TOKEN.FROM)) return null;
+        if (!this.#expectPeek(TOKEN.STRING)) return null;
+
+        const source = this.#current.literal;
+
+        if (this.#next.kind === TOKEN.SEMICOLON) this.#nextToken();
+
+        return makeImportStatement(tok, names, source);
+    }
+
+    #parseExportStatement(): Nullable<ExportStatement> {
+        const tok = this.#current;
+
+        if (!this.#expectPeek(TOKEN.CONST)) return null;
+        if (!this.#expectPeek(TOKEN.IDENT)) return null;
+
+        const name = makeIdentifier(this.#current, this.#current.literal);
+
+        if (!this.#expectPeek(TOKEN.ASSIGN)) return null;
+        this.#nextToken();
+
+        const value = this.#parseExpression(PRECEDENT.LOWEST);
+        if (!value) return null;
+
+        if (this.#next.kind === TOKEN.SEMICOLON) this.#nextToken();
+
+        return makeExportStatement(tok, name, value);
     }
 
     #parseLetStatement(): Nullable<LetStatement> {

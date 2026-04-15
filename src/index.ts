@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import {Lexer} from "./lexer.js";
 import {Parser} from "./parser.js";
-import {evaluateProgram} from "./evaluator.js";
+import {evaluateProgram, createModuleContext} from "./evaluator.js";
 import {createEnvironment, Fejl} from "./object.js";
 
 const file = process.argv[2];
@@ -33,7 +33,8 @@ if (parser.errors.length > 0) {
 }
 
 const env = createEnvironment();
-const result = evaluateProgram(program, env);
+const ctx = createModuleContext(path.dirname(resolved));
+const result = evaluateProgram(program, env, ctx);
 
 if (result instanceof Fejl) {
     console.error(result.tekst());

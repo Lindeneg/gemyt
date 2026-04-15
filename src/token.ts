@@ -20,6 +20,9 @@ const TOKEN_NAMES = [
     "AND",
     "OR",
     "NOT",
+    "IMPORT",
+    "FROM",
+    "EXPORT",
 
     // OPERATOR
     "ASSIGN",
@@ -102,6 +105,9 @@ const keywords = new Map<string, TokenKind>([
     ["og", TOKEN.AND],
     ["eller", TOKEN.OR],
     ["ikke", TOKEN.NOT],
+    ["ind", TOKEN.IMPORT],
+    ["fra", TOKEN.FROM],
+    ["ud", TOKEN.EXPORT],
 ]);
 
 export function lookupIdent(ident: string): TokenKind {
