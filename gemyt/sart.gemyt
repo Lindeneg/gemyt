@@ -14,6 +14,8 @@ kør _ af række(10) {
 råb("kvadrat", matematik.kvadrat(tæller.værdi()))
 råb("halv", matematik.halv(tæller.værdi()))
 
+råb("pipe square half", tæller.værdi() |> matematik.kvadrat |> matematik.halv)
+
 stabil master_fatman = ["lars", "yanis", "per", "john", "fedte", "ketil"]
 råb(master_fatman, master_fatman.vægt)
 
@@ -51,7 +53,11 @@ hvis fil.er_fil(sample_file) {
     afslut(1)
 }
 
-fil.opret_mappe(root_path).afklæd()
+prøv fil.opret_mappe(root_path) {
+    flot(v) => råb("skrev mappe " + root_path),
+    øv(v) => råb("skrev ikke mappe " + root_path)
+}
+
 fil.skriv(sample_file, "hej med dig").afklæd()
 
 lad kilde = stram fil.læs(sample_file)

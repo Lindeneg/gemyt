@@ -6,7 +6,7 @@
     "scripts": {
         "check": "npx tsc --noEmit",
         "test": "vitest run",
-        "dev": "npx tsx src/index.ts sart.gemyt"
+        "dev": "npx tsx src/index.ts gemyt/sart.gemyt"
     },
     "keywords": [],
     "author": "",
