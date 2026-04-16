@@ -29,6 +29,8 @@ import type {
     ArrayLiteral,
     DictLiteral,
     AssignExpression,
+    ImportStatement,
+    ExportStatement,
     Statement,
 } from "../src/ast.js";
 
@@ -791,5 +793,70 @@ describe("ErrExpression", () => {
         const stmt = asExpressionStatement(program.statements[0]);
         expect(stmt?.expression.kind).toBe("ErrExpression");
         testIdentifier((stmt?.expression as ErrExpression).value, "x");
+    });
+});
+
+describe("ImportStatement", () => {
+    it("parses single import from gemyt", () => {
+        const program = parse(`ind linjer fra "gemyt"`);
+        expect(program.statements).toHaveLength(1);
+        const stmt = program.statements[0] as ImportStatement;
+        expect(stmt.kind).toBe("ImportStatement");
+        expect(stmt.names).toEqual(["linjer"]);
+        expect(stmt.source).toBe("gemyt");
+    });
+
+    it("parses multiple names from gemyt", () => {
+        const program = parse(`ind json, tekst, liste fra "gemyt"`);
+        expect(program.statements).toHaveLength(1);
+        const stmt = program.statements[0] as ImportStatement;
+        expect(stmt.kind).toBe("ImportStatement");
+        expect(stmt.names).toEqual(["json", "tekst", "liste"]);
+        expect(stmt.source).toBe("gemyt");
+    });
+
+    it("parses user file import", () => {
+        const program = parse(`ind hjælper fra "./utils"`);
+        expect(program.statements).toHaveLength(1);
+        const stmt = program.statements[0] as ImportStatement;
+        expect(stmt.kind).toBe("ImportStatement");
+        expect(stmt.names).toEqual(["hjælper"]);
+        expect(stmt.source).toBe("./utils");
+    });
+
+    it("parses import with semicolon", () => {
+        const program = parse(`ind foo fra "gemyt";`);
+        expect(program.statements).toHaveLength(1);
+        const stmt = program.statements[0] as ImportStatement;
+        expect(stmt.kind).toBe("ImportStatement");
+        expect(stmt.names).toEqual(["foo"]);
+    });
+});
+
+describe("ExportStatement", () => {
+    it("parses ud stabil with a value", () => {
+        const program = parse(`ud stabil x = 42`);
+        expect(program.statements).toHaveLength(1);
+        const stmt = program.statements[0] as ExportStatement;
+        expect(stmt.kind).toBe("ExportStatement");
+        expect(stmt.name.value).toBe("x");
+        expect(stmt.value.kind).toBe("IntegerLiteral");
+    });
+
+    it("parses ud stabil with a function literal", () => {
+        const program = parse(`ud stabil kvadrat = gør(x) { x * x }`);
+        expect(program.statements).toHaveLength(1);
+        const stmt = program.statements[0] as ExportStatement;
+        expect(stmt.kind).toBe("ExportStatement");
+        expect(stmt.name.value).toBe("kvadrat");
+        expect(stmt.value.kind).toBe("FunctionLiteral");
+    });
+
+    it("parses ud stabil with semicolon", () => {
+        const program = parse(`ud stabil v = 1;`);
+        expect(program.statements).toHaveLength(1);
+        const stmt = program.statements[0] as ExportStatement;
+        expect(stmt.kind).toBe("ExportStatement");
+        expect(stmt.name.value).toBe("v");
     });
 });

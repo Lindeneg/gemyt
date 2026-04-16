@@ -507,4 +507,43 @@ sig(x);`;
             {kind: TOKEN.EOF, literal: ""},
         ]);
     });
+
+    it("lexes import statement keywords: ind, fra, ud", () => {
+        const input = `ind foo fra "gemyt"`;
+
+        expectTokens(input, [
+            {kind: TOKEN.IMPORT, literal: "ind"},
+            {kind: TOKEN.IDENT, literal: "foo"},
+            {kind: TOKEN.FROM, literal: "fra"},
+            {kind: TOKEN.STRING, literal: "gemyt"},
+            {kind: TOKEN.EOF, literal: ""},
+        ]);
+    });
+
+    it("lexes export statement keyword: ud", () => {
+        const input = `ud stabil x = 1`;
+
+        expectTokens(input, [
+            {kind: TOKEN.EXPORT, literal: "ud"},
+            {kind: TOKEN.CONST, literal: "stabil"},
+            {kind: TOKEN.IDENT, literal: "x"},
+            {kind: TOKEN.ASSIGN, literal: "="},
+            {kind: TOKEN.INT, literal: "1"},
+            {kind: TOKEN.EOF, literal: ""},
+        ]);
+    });
+
+    it("lexes multiple names in import", () => {
+        const input = `ind foo, bar fra "gemyt"`;
+
+        expectTokens(input, [
+            {kind: TOKEN.IMPORT, literal: "ind"},
+            {kind: TOKEN.IDENT, literal: "foo"},
+            {kind: TOKEN.COMMA, literal: ","},
+            {kind: TOKEN.IDENT, literal: "bar"},
+            {kind: TOKEN.FROM, literal: "fra"},
+            {kind: TOKEN.STRING, literal: "gemyt"},
+            {kind: TOKEN.EOF, literal: ""},
+        ]);
+    });
 });

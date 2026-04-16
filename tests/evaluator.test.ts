@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as nodePath from "node:path";
 import {Lexer} from "../src/lexer.js";
 import {Parser} from "../src/parser.js";
-import {evaluateProgram} from "../src/evaluator.js";
+import {evaluateProgram, createModuleContext} from "../src/evaluator.js";
 import {
     createEnvironment,
     Tal,
@@ -22,7 +22,13 @@ function evalSource(input: string) {
     const parser = new Parser(lexer);
     const program = parser.parse();
     expect(parser.errors).toHaveLength(0);
-    return evaluateProgram(program, createEnvironment());
+    const ctx = createModuleContext(process.cwd());
+    return evaluateProgram(program, createEnvironment(), ctx);
+}
+
+// Prepend a stdlib import to a source snippet.
+function withModule(module: string, source: string): string {
+    return `ind ${module} fra "gemyt"\n${source}`;
 }
 
 function expectTal(input: string, expected: number) {
@@ -276,29 +282,38 @@ describe("builtin: råb", () => {
     it("råb returns niks", () => expectNiks(`råb("hej")`));
 });
 
-describe("builtin: gemyt_type", () => {
-    it("type of Tal", () => expectTekst("gemyt_type(42)", "Tal"));
-    it("type of Tekst", () => expectTekst(`gemyt_type("hej")`, "Tekst"));
-    it("type of Sandhed", () => expectTekst("gemyt_type(ja)", "Sandhed"));
-    it("type of Niks", () => expectTekst("gemyt_type(niks)", "Niks"));
-    it("type of Liste", () => expectTekst("gemyt_type([1,2])", "Liste"));
-    it("type of Ordbog", () => expectTekst(`gemyt_type({"a":1})`, "Ordbog"));
+describe("builtin: gemyt.type", () => {
+    it("type of Tal", () => expectTekst(withModule("gemyt", "gemyt.type(42)"), "Tal"));
+    it("type of Tekst", () => expectTekst(withModule("gemyt", `gemyt.type("hej")`), "Tekst"));
+    it("type of Sandhed", () => expectTekst(withModule("gemyt", "gemyt.type(ja)"), "Sandhed"));
+    it("type of Niks", () => expectTekst(withModule("gemyt", "gemyt.type(niks)"), "Niks"));
+    it("type of Liste", () => expectTekst(withModule("gemyt", "gemyt.type([1,2])"), "Liste"));
+    it("type of Ordbog", () =>
+        expectTekst(withModule("gemyt", `gemyt.type({"a":1})`), "Ordbog"));
 });
 
-describe("builtin: slankekur", () => {
+describe("builtin: liste.slankekur", () => {
     it("filters a liste", () => {
-        const result = evalSource("slankekur([1, 2, 3, 4], gør(x) { x > 2 })");
+        const result = evalSource(
+            withModule("liste", "liste.slankekur([1, 2, 3, 4], gør(x) { x > 2 })")
+        );
         expect(result).toBeInstanceOf(Liste);
         expect((result as Liste).elements).toHaveLength(2);
         expect(((result as Liste).elements[0] as Tal).value).toBe(3);
         expect(((result as Liste).elements[1] as Tal).value).toBe(4);
     });
     it("returns empty liste when nothing matches", () => {
-        const result = evalSource("slankekur([1, 2, 3], gør(x) { x > 99 })");
+        const result = evalSource(
+            withModule("liste", "liste.slankekur([1, 2, 3], gør(x) { x > 99 })")
+        );
         expect(result).toBeInstanceOf(Liste);
         expect((result as Liste).elements).toHaveLength(0);
     });
-    it("requires a liste as first arg", () => expectFejl("slankekur(42, gør(x) { x })", "Liste"));
+    it("requires a liste as first arg", () =>
+        expectFejl(
+            withModule("liste", "liste.slankekur(42, gør(x) { x })"),
+            "Liste"
+        ));
 });
 
 describe("builtin: tekst (coercion)", () => {
@@ -340,95 +355,119 @@ describe("builtin: tal (coercion)", () => {
     });
 });
 
-describe("builtin: string operations", () => {
-    it("tekst_split splits on separator", () => {
-        const result = evalSource(`tekst_split("a,b,c", ",")`);
+describe("builtin: tekst module (string operations)", () => {
+    it("split splits on separator", () => {
+        const result = evalSource(withModule("tekst", `tekst.split("a,b,c", ",")`));
         expect(result).toBeInstanceOf(Liste);
         const els = (result as Liste).elements;
         expect(els).toHaveLength(3);
         expect((els[0] as Tekst).value).toBe("a");
         expect((els[2] as Tekst).value).toBe("c");
     });
-    it("tekst_split with empty separator splits every char", () => {
-        const result = evalSource(`tekst_split("hej", "")`);
+    it("split with empty separator splits every char", () => {
+        const result = evalSource(withModule("tekst", `tekst.split("hej", "")`));
         expect(result).toBeInstanceOf(Liste);
         expect((result as Liste).elements).toHaveLength(3);
     });
-    it("tekst_trim removes whitespace", () => expectTekst(`tekst_trim("  hej  ")`, "hej"));
-    it("tekst_trim leaves clean string alone", () => expectTekst(`tekst_trim("hej")`, "hej"));
-    it("tekst_søg true when present", () => expectSandhed(`tekst_søg("hej verden", "verden")`, true));
-    it("tekst_søg false when absent", () => expectSandhed(`tekst_søg("hej verden", "xyz")`, false));
-    it("tekst_starter_med true", () => expectSandhed(`tekst_starter_med("hej verden", "hej")`, true));
-    it("tekst_starter_med false", () => expectSandhed(`tekst_starter_med("hej verden", "verden")`, false));
-    it("tekst_ender_med true", () => expectSandhed(`tekst_ender_med("hej verden", "verden")`, true));
-    it("tekst_ender_med false", () => expectSandhed(`tekst_ender_med("hej verden", "hej")`, false));
-    it("tekst_erstat replaces all occurrences", () => expectTekst(`tekst_erstat("a-b-c", "-", "_")`, "a_b_c"));
-    it("tekst_grande uppercases", () => expectTekst(`tekst_grande("hej")`, "HEJ"));
-    it("tekst_bitte lowercases", () => expectTekst(`tekst_bitte("HEJ")`, "hej"));
-    it("tekst_split requires tekst args", () => expectFejl("tekst_split(42, 1)", "forventer Tekst"));
-    it("tekst_trim requires tekst arg", () => expectFejl("tekst_trim(42)", "forventer Tekst"));
+    it("trim removes whitespace", () =>
+        expectTekst(withModule("tekst", `tekst.trim("  hej  ")`), "hej"));
+    it("trim leaves clean string alone", () =>
+        expectTekst(withModule("tekst", `tekst.trim("hej")`), "hej"));
+    it("søg true when present", () =>
+        expectSandhed(withModule("tekst", `tekst.søg("hej verden", "verden")`), true));
+    it("søg false when absent", () =>
+        expectSandhed(withModule("tekst", `tekst.søg("hej verden", "xyz")`), false));
+    it("starter_med true", () =>
+        expectSandhed(withModule("tekst", `tekst.starter_med("hej verden", "hej")`), true));
+    it("starter_med false", () =>
+        expectSandhed(withModule("tekst", `tekst.starter_med("hej verden", "verden")`), false));
+    it("ender_med true", () =>
+        expectSandhed(withModule("tekst", `tekst.ender_med("hej verden", "verden")`), true));
+    it("ender_med false", () =>
+        expectSandhed(withModule("tekst", `tekst.ender_med("hej verden", "hej")`), false));
+    it("erstat replaces all occurrences", () =>
+        expectTekst(withModule("tekst", `tekst.erstat("a-b-c", "-", "_")`), "a_b_c"));
+    it("grande uppercases", () =>
+        expectTekst(withModule("tekst", `tekst.grande("hej")`), "HEJ"));
+    it("bitte lowercases", () =>
+        expectTekst(withModule("tekst", `tekst.bitte("HEJ")`), "hej"));
+    it("split requires tekst args", () =>
+        expectFejl(withModule("tekst", "tekst.split(42, 1)"), "forventer Tekst"));
+    it("trim requires tekst arg", () =>
+        expectFejl(withModule("tekst", "tekst.trim(42)"), "forventer Tekst"));
 });
 
-describe("builtin: path operations", () => {
-    it("stig joins segments", () => {
-        const result = evalSource(`stig("a", "b", "c")`);
+describe("builtin: stig module (path operations)", () => {
+    it("vej joins segments", () => {
+        const result = evalSource(withModule("stig", `stig.vej("a", "b", "c")`));
         expect(result).toBeInstanceOf(Tekst);
         expect((result as Tekst).value).toBe(nodePath.join("a", "b", "c"));
     });
-    it("stig_mappe returns dirname", () => {
-        const result = evalSource(`stig_mappe("/some/path/fil.txt")`);
+    it("mappe returns dirname", () => {
+        const result = evalSource(withModule("stig", `stig.mappe("/some/path/fil.txt")`));
         expect(result).toBeInstanceOf(Tekst);
         expect((result as Tekst).value).toBe(nodePath.dirname("/some/path/fil.txt"));
     });
-    it("stig_fil returns basename", () => {
-        expectTekst(`stig_fil("/some/path/fil.txt")`, "fil.txt");
-    });
-    it("stig_udvidelse returns extension", () => {
-        expectTekst(`stig_udvidelse("/some/path/fil.txt")`, ".txt");
-    });
-    it("stig_udvidelse empty for no extension", () => {
-        expectTekst(`stig_udvidelse("/some/path/fil")`, "");
-    });
-    it("stig requires tekst args", () => expectFejl("stig(1, 2)", "forventer Tekst"));
+    it("fil returns basename", () =>
+        expectTekst(withModule("stig", `stig.fil("/some/path/fil.txt")`), "fil.txt"));
+    it("udvidelse returns extension", () =>
+        expectTekst(withModule("stig", `stig.udvidelse("/some/path/fil.txt")`), ".txt"));
+    it("udvidelse empty for no extension", () =>
+        expectTekst(withModule("stig", `stig.udvidelse("/some/path/fil")`), ""));
+    it("vej requires tekst args", () =>
+        expectFejl(withModule("stig", "stig.vej(1, 2)"), "forventer Tekst"));
 });
 
-describe("builtin: json", () => {
-    it("json_fra parses object", () => {
-        const result = evalSource(`json_fra("{\\"a\\":1}")`);
+describe("builtin: json module", () => {
+    it("fra parses object", () => {
+        const result = evalSource(withModule("json", `json.fra("{\\"a\\":1}")`));
         expect(result).toBeInstanceOf(Resultat);
         expect((result as Resultat).erFint).toBe(true);
         expect((result as Resultat).value).toBeInstanceOf(Ordbog);
     });
-    it("json_fra parses array", () => {
-        const result = evalSource(`json_fra("[1,2,3]")`);
+    it("fra parses array", () => {
+        const result = evalSource(withModule("json", `json.fra("[1,2,3]")`));
         expect(result).toBeInstanceOf(Resultat);
         const inner = (result as Resultat).value;
         expect(inner).toBeInstanceOf(Liste);
         expect((inner as Liste).elements).toHaveLength(3);
     });
-    it("json_fra parses number", () => {
-        const result = evalSource(`json_fra("42")`);
+    it("fra parses number", () => {
+        const result = evalSource(withModule("json", `json.fra("42")`));
         expect(result).toBeInstanceOf(Resultat);
         expect(((result as Resultat).value as Tal).value).toBe(42);
     });
-    it("json_fra returns øv on invalid JSON", () => {
-        const result = evalSource(`json_fra("ikke json")`);
+    it("fra returns øv on invalid JSON", () => {
+        const result = evalSource(withModule("json", `json.fra("ikke json")`));
         expect(result).toBeInstanceOf(Resultat);
         expect((result as Resultat).erFint).toBe(false);
     });
-    it("json_til serializes a Tal", () => expectTekst("json_til(42)", "42"));
-    it("json_til serializes a Tekst", () => expectTekst(`json_til("hej")`, `"hej"`));
-    it("json_til serializes a Liste", () => expectTekst("json_til([1, 2, 3])", "[1,2,3]"));
-    it("json_til serializes niks as null", () => expectTekst("json_til(niks)", "null"));
-    it("json_til no arg gives null", () => expectTekst("json_til()", "null"));
-    it("json_flot produces indented output", () => {
-        const result = evalSource("json_flot([1])");
+    it("til serializes a Tal", () => expectTekst(withModule("json", "json.til(42)"), "42"));
+    it("til serializes a Tekst", () =>
+        expectTekst(withModule("json", `json.til("hej")`), `"hej"`));
+    it("til serializes a Liste", () =>
+        expectTekst(withModule("json", "json.til([1, 2, 3])"), "[1,2,3]"));
+    it("til serializes niks as null", () =>
+        expectTekst(withModule("json", "json.til(niks)"), "null"));
+    it("til no arg gives null", () => expectTekst(withModule("json", "json.til()"), "null"));
+    it("flot produces indented output for a liste", () => {
+        const result = evalSource(withModule("json", "json.flot([1])"));
+        expect(result).toBeInstanceOf(Tekst);
+        expect((result as Tekst).value).toContain("\n");
+    });
+    it("flot produces indented output for an ordbog", () => {
+        const result = evalSource(withModule("json", `json.flot({"a": 1})`));
+        expect(result).toBeInstanceOf(Tekst);
+        expect((result as Tekst).value).toContain("\n");
+    });
+    it("flot reformats a compact JSON string", () => {
+        const result = evalSource(withModule("json", `json.flot(json.til({"a": 1}))`));
         expect(result).toBeInstanceOf(Tekst);
         expect((result as Tekst).value).toContain("\n");
     });
 });
 
-describe("builtin: filesystem", () => {
+describe("builtin: fil module (filesystem)", () => {
     let tmpDir: string;
 
     afterEach(() => {
@@ -440,31 +479,31 @@ describe("builtin: filesystem", () => {
         fn(tmpDir);
     }
 
-    it("skriv_fil and læs_fil round-trip", () => {
+    it("skriv and læs round-trip", () => {
         withTmpDir((dir) => {
             const fil = nodePath.join(dir, "test.txt").replace(/\\/g, "/");
-            const result = evalSource(`skriv_fil("${fil}", "hej verden")`);
+            const result = evalSource(withModule("fil", `fil.skriv("${fil}", "hej verden")`));
             expect(result).toBeInstanceOf(Resultat);
             expect((result as Resultat).erFint).toBe(true);
 
-            const read = evalSource(`læs_fil("${fil}")`);
+            const read = evalSource(withModule("fil", `fil.læs("${fil}")`));
             expect(read).toBeInstanceOf(Resultat);
             expect(((read as Resultat).value as Tekst).value).toBe("hej verden");
         });
     });
 
-    it("tilføj_fil appends content", () => {
+    it("tilføj appends content", () => {
         withTmpDir((dir) => {
             const fil = nodePath.join(dir, "append.txt").replace(/\\/g, "/");
-            evalSource(`skriv_fil("${fil}", "linje1")`);
-            evalSource(`tilføj_fil("${fil}", "linje2")`);
-            const read = evalSource(`læs_fil("${fil}")`);
+            evalSource(withModule("fil", `fil.skriv("${fil}", "linje1")`));
+            evalSource(withModule("fil", `fil.tilføj("${fil}", "linje2")`));
+            const read = evalSource(withModule("fil", `fil.læs("${fil}")`));
             expect(((read as Resultat).value as Tekst).value).toBe("linje1linje2");
         });
     });
 
-    it("læs_fil on missing file returns øv", () => {
-        const result = evalSource(`læs_fil("/findes/ikke/overhovedet.txt")`);
+    it("læs on missing file returns øv", () => {
+        const result = evalSource(withModule("fil", `fil.læs("/findes/ikke/overhovedet.txt")`));
         expect(result).toBeInstanceOf(Resultat);
         expect((result as Resultat).erFint).toBe(false);
     });
@@ -473,26 +512,26 @@ describe("builtin: filesystem", () => {
         withTmpDir((dir) => {
             const fil = nodePath.join(dir, "x.txt").replace(/\\/g, "/");
             fs.writeFileSync(fil, "x");
-            expectSandhed(`findes("${fil}")`, true);
+            expectSandhed(withModule("fil", `fil.findes("${fil}")`), true);
         });
     });
 
     it("findes returns nej for missing path", () => {
-        expectSandhed(`findes("/dette/findes/ikke")`, false);
+        expectSandhed(withModule("fil", `fil.findes("/dette/findes/ikke")`), false);
     });
 
     it("er_fil true for a file", () => {
         withTmpDir((dir) => {
             const fil = nodePath.join(dir, "x.txt").replace(/\\/g, "/");
             fs.writeFileSync(fil, "x");
-            expectSandhed(`er_fil("${fil}")`, true);
+            expectSandhed(withModule("fil", `fil.er_fil("${fil}")`), true);
         });
     });
 
     it("er_mappe true for a directory", () => {
         withTmpDir((dir) => {
             const d = dir.replace(/\\/g, "/");
-            expectSandhed(`er_mappe("${d}")`, true);
+            expectSandhed(withModule("fil", `fil.er_mappe("${d}")`), true);
         });
     });
 
@@ -500,14 +539,14 @@ describe("builtin: filesystem", () => {
         withTmpDir((dir) => {
             const fil = nodePath.join(dir, "x.txt").replace(/\\/g, "/");
             fs.writeFileSync(fil, "x");
-            expectSandhed(`er_mappe("${fil}")`, false);
+            expectSandhed(withModule("fil", `fil.er_mappe("${fil}")`), false);
         });
     });
 
     it("opret_mappe creates directory", () => {
         withTmpDir((dir) => {
             const sub = nodePath.join(dir, "sub", "deep").replace(/\\/g, "/");
-            const result = evalSource(`opret_mappe("${sub}")`);
+            const result = evalSource(withModule("fil", `fil.opret_mappe("${sub}")`));
             expect(result).toBeInstanceOf(Resultat);
             expect((result as Resultat).erFint).toBe(true);
             expect(fs.existsSync(sub)).toBe(true);
@@ -519,7 +558,7 @@ describe("builtin: filesystem", () => {
             fs.writeFileSync(nodePath.join(dir, "a.txt"), "");
             fs.writeFileSync(nodePath.join(dir, "b.txt"), "");
             const d = dir.replace(/\\/g, "/");
-            const result = evalSource(`læs_mappe("${d}")`);
+            const result = evalSource(withModule("fil", `fil.læs_mappe("${d}")`));
             expect(result).toBeInstanceOf(Resultat);
             const inner = (result as Resultat).value;
             expect(inner).toBeInstanceOf(Liste);
@@ -531,7 +570,7 @@ describe("builtin: filesystem", () => {
         withTmpDir((dir) => {
             const fil = nodePath.join(dir, "del.txt").replace(/\\/g, "/");
             fs.writeFileSync(fil, "x");
-            const result = evalSource(`udryd("${fil}")`);
+            const result = evalSource(withModule("fil", `fil.udryd("${fil}")`));
             expect(result).toBeInstanceOf(Resultat);
             expect((result as Resultat).erFint).toBe(true);
             expect(fs.existsSync(fil)).toBe(false);
@@ -543,7 +582,7 @@ describe("builtin: filesystem", () => {
             const fra = nodePath.join(dir, "fra.txt").replace(/\\/g, "/");
             const til = nodePath.join(dir, "til.txt").replace(/\\/g, "/");
             fs.writeFileSync(fra, "x");
-            const result = evalSource(`omdøb("${fra}", "${til}")`);
+            const result = evalSource(withModule("fil", `fil.omdøb("${fra}", "${til}")`));
             expect(result).toBeInstanceOf(Resultat);
             expect((result as Resultat).erFint).toBe(true);
             expect(fs.existsSync(til)).toBe(true);
@@ -551,47 +590,138 @@ describe("builtin: filesystem", () => {
         });
     });
 
-    it("skriv_fil wrong arg type is fejl", () => {
-        expectFejl("skriv_fil(42, 42)", "forventer Tekst");
+    it("skriv wrong arg type is fejl", () => {
+        expectFejl(withModule("fil", "fil.skriv(42, 42)"), "forventer Tekst");
     });
 });
 
-describe("builtin: process", () => {
-    it("gemyt_cwd returns a string", () => {
-        const result = evalSource("gemyt_cwd()");
+describe("builtin: gemyt module (process)", () => {
+    it("cwd returns a string", () => {
+        const result = evalSource(withModule("gemyt", "gemyt.cwd()"));
         expect(result).toBeInstanceOf(Tekst);
         expect((result as Tekst).value.length).toBeGreaterThan(0);
     });
-    it("gemyt_args returns a liste", () => {
-        const result = evalSource("gemyt_args()");
+    it("args returns a liste", () => {
+        const result = evalSource(withModule("gemyt", "gemyt.args()"));
         expect(result).toBeInstanceOf(Liste);
     });
-    it("gemyt_env returns tekst for set variable", () => {
+    it("env returns tekst for set variable", () => {
         process.env["GEMYT_TEST_VAR"] = "hejsa";
-        const result = evalSource(`gemyt_env("GEMYT_TEST_VAR")`);
+        const result = evalSource(withModule("gemyt", `gemyt.env("GEMYT_TEST_VAR")`));
         expect(result).toBeInstanceOf(Tekst);
         expect((result as Tekst).value).toBe("hejsa");
         delete process.env["GEMYT_TEST_VAR"];
     });
-    it("gemyt_env returns niks for unset variable", () => {
-        expectNiks(`gemyt_env("GEMYT_FINDES_IKKE_XYZ")`);
+    it("env returns niks for unset variable", () => {
+        expectNiks(withModule("gemyt", `gemyt.env("GEMYT_FINDES_IKKE_XYZ")`));
     });
-    it("gemyt_env requires tekst arg", () => expectFejl("gemyt_env(42)", "forventer Tekst"));
+    it("env requires tekst arg", () =>
+        expectFejl(withModule("gemyt", "gemyt.env(42)"), "forventer Tekst"));
 });
 
-describe("builtin: kommando", () => {
-    it("runs a successful command and returns flot(output)", () => {
-        const result = evalSource(`kommando("node --version")`);
+describe("builtin: kommando module", () => {
+    it("kør runs a successful command and returns flot(output)", () => {
+        const result = evalSource(withModule("kommando", `kommando.kør("node --version")`));
         expect(result).toBeInstanceOf(Resultat);
         expect((result as Resultat).erFint).toBe(true);
         expect(((result as Resultat).value as Tekst).value).toMatch(/^v\d+/);
     });
-    it("failed command returns øv with stderr", () => {
-        const result = evalSource(`kommando("node -e \\"process.exit(1)\\"")`);
+    it("kør failed command returns øv with stderr", () => {
+        const result = evalSource(
+            withModule("kommando", `kommando.kør("node -e \\"process.exit(1)\\"")`)
+        );
         expect(result).toBeInstanceOf(Resultat);
         expect((result as Resultat).erFint).toBe(false);
     });
-    it("requires a tekst arg", () => expectFejl("kommando(42)", "forventer Tekst"));
+    it("kør requires a tekst arg", () =>
+        expectFejl(withModule("kommando", "kommando.kør(42)"), "forventer Tekst"));
+});
+
+describe("import system", () => {
+    it("importing unknown stdlib module is a fejl", () => {
+        expectFejl(`ind ukendt fra "gemyt"`, "ukendt standardbibliotekets modul");
+    });
+
+    it("importing from unknown source is a fejl", () => {
+        expectFejl(`ind x fra "http://example.com"`, "ukendt importkilde");
+    });
+
+    it("importing missing user file is a fejl", () => {
+        expectFejl(`ind x fra "./findes-ikke"`, "findes ikke");
+    });
+
+    it("imported stdlib name is immutable", () => {
+        expectFejl(
+            `ind linjer fra "gemyt"\nlinjer = niks`,
+            "stabil"
+        );
+    });
+
+    it("can import multiple modules from gemyt", () => {
+        const result = evalSource(
+            `ind json, tekst fra "gemyt"\ntekst.trim(json.til(42))`
+        );
+        expect(result).toBeInstanceOf(Tekst);
+        expect((result as Tekst).value).toBe("42");
+    });
+
+    it("user file export and import", () => {
+        const tmpDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), "gemyt-test-"));
+        try {
+            const modPath = nodePath.join(tmpDir, "math.gemyt");
+            fs.writeFileSync(modPath, `ud stabil kvadrat = gør(x) { x * x }`);
+            const result = evalSource(
+                `ind kvadrat fra "${modPath.replace(/\\/g, "/")}"\nkvadrat(5)`
+            );
+            expect(result).toBeInstanceOf(Tal);
+            expect((result as Tal).value).toBe(25);
+        } finally {
+            fs.rmSync(tmpDir, {recursive: true, force: true});
+        }
+    });
+
+    it("importing unexported name from user file is a fejl", () => {
+        const tmpDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), "gemyt-test-"));
+        try {
+            const modPath = nodePath.join(tmpDir, "empty.gemyt");
+            fs.writeFileSync(modPath, `stabil x = 1`);
+            expectFejl(
+                `ind x fra "${modPath.replace(/\\/g, "/")}"`,
+                "er ikke eksporteret"
+            );
+        } finally {
+            fs.rmSync(tmpDir, {recursive: true, force: true});
+        }
+    });
+
+    it("circular import returns fejl", () => {
+        const tmpDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), "gemyt-test-"));
+        try {
+            const aPath = nodePath.join(tmpDir, "a.gemyt").replace(/\\/g, "/");
+            const bPath = nodePath.join(tmpDir, "b.gemyt").replace(/\\/g, "/");
+            fs.writeFileSync(aPath, `ind b fra "${bPath}"\nud stabil x = 1`);
+            fs.writeFileSync(bPath, `ind a fra "${aPath}"\nud stabil y = 2`);
+            expectFejl(`ind a fra "${aPath}"`, "cirkulær import");
+        } finally {
+            fs.rmSync(tmpDir, {recursive: true, force: true});
+        }
+    });
+
+    it("user file is cached: evaluated only once", () => {
+        const tmpDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), "gemyt-test-"));
+        try {
+            const modPath = nodePath.join(tmpDir, "tæller.gemyt").replace(/\\/g, "/");
+            fs.writeFileSync(modPath, `ud stabil v = 42`);
+            // Import twice in the same program
+            const result = evalSource(
+                `ind v fra "${modPath}"\nind v fra "${modPath}"\nv`
+            );
+            expect(result).toBeInstanceOf(Tal);
+            expect((result as Tal).value).toBe(42);
+        } finally {
+            fs.rmSync(tmpDir, {recursive: true, force: true});
+        }
+    });
 });
 
 describe("type errors", () => {
