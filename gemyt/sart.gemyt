@@ -1,4 +1,4 @@
-ind stig, fil, json, liste fra "gemyt"
+ind gemyt, stig, fil, json, liste, linjer, tekst fra "gemyt"
 ind matematik, lav_tæller fra "./foo.gemyt"
 
 stabil tæller = lav_tæller()
@@ -68,6 +68,11 @@ fil.udryd(root_path)
 
 lad halløj = {"svensker": {"er": øv(0)}, "nordmand": {"er": flot(1).afklæd()}}
 
+// TODO lav ordbog itererbar
+//kør v, k af halløj {
+//    råb(v, k)
+//}
+
 råb(halløj)
 råb(halløj.svensker.er.erFint, halløj.svensker.er.værdi)
 råb(halløj.nordmand.er)
@@ -76,6 +81,48 @@ stabil hejsa = json.til(halløj)
 
 råb(hejsa)
 råb(stram json.fra(hejsa))
-
 råb(json.flot(hejsa))
+
+kør v af tekst.split("hello", "") {
+    råb("split: ", v)
+}
+
+råb("søg: ", tekst.søg("hello", "ll"))
+råb("starter_med he: ", tekst.starter_med("hello", "he"))
+råb("starter_med hee: ", tekst.starter_med("hello", "hee"))
+råb("ender_med lo: ", tekst.ender_med("hello", "lo"))
+råb("ender_med loo: ", tekst.ender_med("hello", "loo"))
+råb("erstat llo med ool", tekst.erstat("hello", "llo", "ool"))
+råb("grande", tekst.grande("hello"))
+råb("bitte", tekst.bitte("HELLO"))
+
+stabil svar = gør () {
+    stabil navn = linjer.spørgsmål("Hvad er dit navn?\n> ", 12)
+    råb("navn: ", navn)
+
+    stabil alder = linjer.tal("Hvad er din alder?\n> ")
+    råb("alder: ", alder, gemyt.type(alder))
+
+    hvis alder < 18 {
+        aflever øv("du er ikke gammel nok til at bruge denne app..")
+    }
+
+    stabil bekræft = linjer.bekræft("Er du sikker?\n> ")
+    råb("bekræft: ", bekræft)
+
+    hvis alder < 25 {
+        aflever øv("nu stopper du altså med at lyve")
+    }
+
+    stabil valg = linjer.vælg("Hvem er bedst?", ["L10", "C7"])
+
+    prøv valg {
+        "L10" => råb("messi er nemlig bedst"),
+        "C7" => råb("den falske ronaldo? hvad tænker du på menneske?"),
+    }
+
+    aflever flot(niks)
+}()
+
+råb(svar.værdi)
 
