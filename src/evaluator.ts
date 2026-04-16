@@ -26,6 +26,7 @@ import {
     Indbygget,
     ReturVærdi,
     BrydSignal,
+    Niks,
     Fejl,
     nativeBoolTilObj,
     erFejl,
@@ -33,7 +34,6 @@ import {
     getHashKey,
     createEnclosedEnvironment,
     createEnvironment,
-    Niks,
 } from "./object.js";
 
 type BuiltinEntry = readonly [string, Obj];
@@ -527,9 +527,9 @@ function handleImport(stmt: ImportStatement, env: Environment, ctx: ModuleContex
         return NIKS;
     }
 
-    if (stmt.source.startsWith("./") || stmt.source.startsWith("../")) {
+    if (stmt.source.startsWith("./") || stmt.source.startsWith("../") || path.isAbsolute(stmt.source)) {
         const rawPath = stmt.source.endsWith(".gemyt") ? stmt.source : stmt.source + ".gemyt";
-        const resolved = path.resolve(ctx.dir, rawPath);
+        const resolved = path.isAbsolute(rawPath) ? rawPath : path.resolve(ctx.dir, rawPath);
 
         if (ctx.loading.has(resolved)) {
             return new Fejl(`cirkulær import opdaget: '${resolved}'`);
