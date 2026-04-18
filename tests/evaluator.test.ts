@@ -1,4 +1,4 @@
-import {describe, expect, it, afterEach} from "vitest";
+import {describe, expect, it, afterEach, vi} from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as nodePath from "node:path";
@@ -212,16 +212,16 @@ describe("flot and øv (Resultat)", () => {
     it("flot wraps a value", () => {
         const result = evalSource("flot(42)");
         expect(result).toBeInstanceOf(Resultat);
-        expect((result as Resultat).erFint).toBe(true);
+        expect((result as Resultat).erFlot).toBe(true);
         expect(((result as Resultat).value as Tal).value).toBe(42);
     });
     it("øv wraps a value", () => {
         const result = evalSource(`øv("noget gik galt")`);
         expect(result).toBeInstanceOf(Resultat);
-        expect((result as Resultat).erFint).toBe(false);
+        expect((result as Resultat).erFlot).toBe(false);
     });
-    it(".erFint is true for flot", () => expectSandhed("flot(1).erFint", true));
-    it(".erFint is false for øv", () => expectSandhed(`øv("x").erFint`, false));
+    it(".erFlot is true for flot", () => expectSandhed("flot(1).erFlot", true));
+    it(".erFlot is false for øv", () => expectSandhed(`øv("x").erFlot`, false));
     it(".værdi reads the inner value", () => expectTal("flot(7).værdi", 7));
     it(".afklæd on flot returns value", () => expectTal("flot(5).afklæd()", 5));
     it(".afklæd on øv returns fejl", () => expectFejl(`øv("bad").afklæd()`, "afklæd"));
@@ -239,7 +239,7 @@ describe("stram propagation", () => {
             f()
         `);
         expect(result).toBeInstanceOf(Resultat);
-        expect((result as Resultat).erFint).toBe(false);
+        expect((result as Resultat).erFlot).toBe(false);
     });
     it("stram on flot inside function continues normally", () =>
         expectTal(
@@ -282,6 +282,59 @@ describe("builtin: råb", () => {
     it("råb returns niks", () => expectNiks(`råb("hej")`));
 });
 
+describe("builtin: række", () => {
+    it("single arg produces 0..n exclusive", () => {
+        const result = evalSource("række(3)");
+        expect(result).toBeInstanceOf(Liste);
+        expect((result as Liste).elements.map((e) => (e as Tal).value)).toEqual([0, 1, 2]);
+    });
+    it("two args produces fra..til exclusive", () => {
+        const result = evalSource("række(2, 5)");
+        expect(result).toBeInstanceOf(Liste);
+        expect((result as Liste).elements.map((e) => (e as Tal).value)).toEqual([2, 3, 4]);
+    });
+    it("empty when fra >= til", () => {
+        const result = evalSource("række(5, 3)");
+        expect(result).toBeInstanceOf(Liste);
+        expect((result as Liste).elements).toHaveLength(0);
+    });
+    it("no args defaults fra=0 til=0 producing empty", () => {
+        const result = evalSource("række()");
+        expect(result).toBeInstanceOf(Liste);
+        expect((result as Liste).elements).toHaveLength(0);
+    });
+    it("negative fra is a fejl", () => expectFejl("række(-1, 3)", "fra"));
+    it("negative til is a fejl", () => expectFejl("række(0, -1)", "til"));
+    it("non-Tal fra is a fejl", () => expectFejl(`række("x", 3)`, "Tal"));
+    it("non-Tal til is a fejl", () => expectFejl(`række(0, "x")`, "Tal"));
+});
+
+describe("builtin: afslut", () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it("calls process.exit with given kode", () => {
+        const spy = vi.spyOn(process, "exit").mockImplementation(((_code?: number) => {
+            throw new Error("__exit__");
+        }) as never);
+        expect(() => evalSource("afslut(3)")).toThrow("__exit__");
+        expect(spy).toHaveBeenCalledWith(3);
+    });
+    it("defaults to 0 when no arg is given", () => {
+        const spy = vi.spyOn(process, "exit").mockImplementation(((_code?: number) => {
+            throw new Error("__exit__");
+        }) as never);
+        expect(() => evalSource("afslut()")).toThrow("__exit__");
+        expect(spy).toHaveBeenCalledWith(0);
+    });
+    it("defaults to 0 when arg is not a Tal", () => {
+        const spy = vi.spyOn(process, "exit").mockImplementation(((_code?: number) => {
+            throw new Error("__exit__");
+        }) as never);
+        expect(() => evalSource(`afslut("nej")`)).toThrow("__exit__");
+        expect(spy).toHaveBeenCalledWith(0);
+    });
+});
+
 describe("builtin: gemyt.type", () => {
     it("type of Tal", () => expectTekst(withModule("gemyt", "gemyt.type(42)"), "Tal"));
     it("type of Tekst", () => expectTekst(withModule("gemyt", `gemyt.type("hej")`), "Tekst"));
@@ -316,6 +369,52 @@ describe("builtin: liste.slankekur", () => {
         ));
 });
 
+describe("builtin: liste (mutators)", () => {
+    it("skub appends and returns the same liste", () => {
+        const result = evalSource(
+            withModule("liste", "lad l = [1, 2]; liste.skub(l, 3); l")
+        );
+        expect(result).toBeInstanceOf(Liste);
+        expect((result as Liste).elements.map((e) => (e as Tal).value)).toEqual([1, 2, 3]);
+    });
+    it("skub requires a Liste", () =>
+        expectFejl(withModule("liste", "liste.skub(42, 1)"), "Liste"));
+    it("skub requires a value arg", () =>
+        expectFejl(withModule("liste", "liste.skub([1, 2])"), "sidste argument"));
+
+    it("fyld creates a liste with n copies of a value", () => {
+        const result = evalSource(withModule("liste", "liste.fyld(0, 4)"));
+        expect(result).toBeInstanceOf(Liste);
+        expect((result as Liste).elements.map((e) => (e as Tal).value)).toEqual([0, 0, 0, 0]);
+    });
+    it("fyld with 0 gives empty liste", () => {
+        const result = evalSource(withModule("liste", "liste.fyld(7, 0)"));
+        expect(result).toBeInstanceOf(Liste);
+        expect((result as Liste).elements).toHaveLength(0);
+    });
+    it("fyld requires a value", () =>
+        expectFejl(withModule("liste", "liste.fyld()"), "første argument"));
+    it("fyld requires a Tal amount", () =>
+        expectFejl(withModule("liste", `liste.fyld(1, "to")`), "Tal"));
+
+    it("genfyld overwrites every element", () => {
+        const result = evalSource(
+            withModule("liste", "lad l = [1, 2, 3]; liste.genfyld(l, 9); l")
+        );
+        expect(result).toBeInstanceOf(Liste);
+        expect((result as Liste).elements.map((e) => (e as Tal).value)).toEqual([9, 9, 9]);
+    });
+    it("genfyld on empty liste is a no-op", () => {
+        const result = evalSource(withModule("liste", "lad l = []; liste.genfyld(l, 1); l"));
+        expect(result).toBeInstanceOf(Liste);
+        expect((result as Liste).elements).toHaveLength(0);
+    });
+    it("genfyld requires a Liste", () =>
+        expectFejl(withModule("liste", "liste.genfyld(42, 1)"), "Liste"));
+    it("genfyld requires a value", () =>
+        expectFejl(withModule("liste", "liste.genfyld([1, 2])"), "sidste argument"));
+});
+
 describe("builtin: tekst (coercion)", () => {
     it("converts Tal to string", () => expectTekst("tekst(42)", "42"));
     it("converts Sandhed true to string", () => expectTekst("tekst(ja)", "ja"));
@@ -334,13 +433,13 @@ describe("builtin: tal (coercion)", () => {
     it("converts numeric string to flot(Tal)", () => {
         const result = evalSource(`tal("3.14")`);
         expect(result).toBeInstanceOf(Resultat);
-        expect((result as Resultat).erFint).toBe(true);
+        expect((result as Resultat).erFlot).toBe(true);
         expect(((result as Resultat).value as Tal).value).toBe(3.14);
     });
     it("invalid string returns øv", () => {
         const result = evalSource(`tal("ikke_et_tal")`);
         expect(result).toBeInstanceOf(Resultat);
-        expect((result as Resultat).erFint).toBe(false);
+        expect((result as Resultat).erFlot).toBe(false);
     });
     it("true converts to 1", () => expectTal("tal(ja)", 1));
     it("false converts to 0", () => expectTal("tal(nej)", 0));
@@ -351,7 +450,7 @@ describe("builtin: tal (coercion)", () => {
     it("niks returns øv", () => {
         const result = evalSource("tal(niks)");
         expect(result).toBeInstanceOf(Resultat);
-        expect((result as Resultat).erFint).toBe(false);
+        expect((result as Resultat).erFlot).toBe(false);
     });
 });
 
@@ -422,7 +521,7 @@ describe("builtin: json module", () => {
     it("fra parses object", () => {
         const result = evalSource(withModule("json", `json.fra("{\\"a\\":1}")`));
         expect(result).toBeInstanceOf(Resultat);
-        expect((result as Resultat).erFint).toBe(true);
+        expect((result as Resultat).erFlot).toBe(true);
         expect((result as Resultat).value).toBeInstanceOf(Ordbog);
     });
     it("fra parses array", () => {
@@ -440,7 +539,7 @@ describe("builtin: json module", () => {
     it("fra returns øv on invalid JSON", () => {
         const result = evalSource(withModule("json", `json.fra("ikke json")`));
         expect(result).toBeInstanceOf(Resultat);
-        expect((result as Resultat).erFint).toBe(false);
+        expect((result as Resultat).erFlot).toBe(false);
     });
     it("til serializes a Tal", () => expectTekst(withModule("json", "json.til(42)"), "42"));
     it("til serializes a Tekst", () =>
@@ -484,7 +583,7 @@ describe("builtin: fil module (filesystem)", () => {
             const fil = nodePath.join(dir, "test.txt").replace(/\\/g, "/");
             const result = evalSource(withModule("fil", `fil.skriv("${fil}", "hej verden")`));
             expect(result).toBeInstanceOf(Resultat);
-            expect((result as Resultat).erFint).toBe(true);
+            expect((result as Resultat).erFlot).toBe(true);
 
             const read = evalSource(withModule("fil", `fil.læs("${fil}")`));
             expect(read).toBeInstanceOf(Resultat);
@@ -505,7 +604,7 @@ describe("builtin: fil module (filesystem)", () => {
     it("læs on missing file returns øv", () => {
         const result = evalSource(withModule("fil", `fil.læs("/findes/ikke/overhovedet.txt")`));
         expect(result).toBeInstanceOf(Resultat);
-        expect((result as Resultat).erFint).toBe(false);
+        expect((result as Resultat).erFlot).toBe(false);
     });
 
     it("findes returns ja for existing file", () => {
@@ -548,7 +647,7 @@ describe("builtin: fil module (filesystem)", () => {
             const sub = nodePath.join(dir, "sub", "deep").replace(/\\/g, "/");
             const result = evalSource(withModule("fil", `fil.opret_mappe("${sub}")`));
             expect(result).toBeInstanceOf(Resultat);
-            expect((result as Resultat).erFint).toBe(true);
+            expect((result as Resultat).erFlot).toBe(true);
             expect(fs.existsSync(sub)).toBe(true);
         });
     });
@@ -572,7 +671,7 @@ describe("builtin: fil module (filesystem)", () => {
             fs.writeFileSync(fil, "x");
             const result = evalSource(withModule("fil", `fil.udryd("${fil}")`));
             expect(result).toBeInstanceOf(Resultat);
-            expect((result as Resultat).erFint).toBe(true);
+            expect((result as Resultat).erFlot).toBe(true);
             expect(fs.existsSync(fil)).toBe(false);
         });
     });
@@ -584,7 +683,7 @@ describe("builtin: fil module (filesystem)", () => {
             fs.writeFileSync(fra, "x");
             const result = evalSource(withModule("fil", `fil.omdøb("${fra}", "${til}")`));
             expect(result).toBeInstanceOf(Resultat);
-            expect((result as Resultat).erFint).toBe(true);
+            expect((result as Resultat).erFlot).toBe(true);
             expect(fs.existsSync(til)).toBe(true);
             expect(fs.existsSync(fra)).toBe(false);
         });
@@ -623,7 +722,7 @@ describe("builtin: kommando module", () => {
     it("kør runs a successful command and returns flot(output)", () => {
         const result = evalSource(withModule("kommando", `kommando.kør("node --version")`));
         expect(result).toBeInstanceOf(Resultat);
-        expect((result as Resultat).erFint).toBe(true);
+        expect((result as Resultat).erFlot).toBe(true);
         expect(((result as Resultat).value as Tekst).value).toMatch(/^v\d+/);
     });
     it("kør failed command returns øv with stderr", () => {
@@ -631,7 +730,7 @@ describe("builtin: kommando module", () => {
             withModule("kommando", `kommando.kør("node -e \\"process.exit(1)\\"")`)
         );
         expect(result).toBeInstanceOf(Resultat);
-        expect((result as Resultat).erFint).toBe(false);
+        expect((result as Resultat).erFlot).toBe(false);
     });
     it("kør requires a tekst arg", () =>
         expectFejl(withModule("kommando", "kommando.kør(42)"), "forventer Tekst"));
@@ -758,3 +857,4 @@ describe("Tal+Tekst coercion on +", () => {
     it("float coerced to string", () => expectTekst(`"pi=" + 3.14`, "pi=3.14"));
     it("coercion in compound +=", () => expectTekst(`lad s = "tæller: "; s += 42; s`, "tæller: 42"));
 });
+

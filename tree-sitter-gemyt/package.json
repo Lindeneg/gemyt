@@ -1,0 +1,22 @@
+{
+  "name": "tree-sitter-gemyt",
+  "version": "0.1.0",
+  "description": "Tree-sitter grammar for the Gemyt programming language",
+  "main": "bindings/node",
+  "keywords": [
+    "tree-sitter",
+    "parser",
+    "gemyt"
+  ],
+  "dependencies": {
+    "node-addon-api": "^8.0.0",
+    "node-gyp-build": "^4.8.0"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.24.0"
+  },
+  "scripts": {
+    "generate": "tree-sitter generate",
+    "parse": "tree-sitter parse"
+  }
+}

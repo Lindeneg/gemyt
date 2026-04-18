@@ -1,0 +1,15 @@
+node_modules/
+src/
+build/
+target/
+Cargo.toml
+Cargo.lock
+binding.gyp
+bindings/
+package-lock.json
+tree-sitter.json
+*.dll
+*.wasm
+*.exp
+*.lib
+*.obj

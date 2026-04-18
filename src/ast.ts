@@ -442,7 +442,7 @@ export function stringify(node: Statement | Expression): string {
         case "ReturnStatement":
             return `aflever ${stringify(node.value)};`;
         case "BreakStatement":
-            return "bryd;";
+            return "stop;";
         case "ExpressionStatement":
             return `${stringify(node.expression)};`;
         case "BlockStatement":
@@ -501,13 +501,13 @@ export function stringify(node: Statement | Expression): string {
             return `prøv ${stringify(node.subject)} { ${arms} }`;
         }
         case "OkExpression":
-            return `fint(${stringify(node.value)})`;
+            return `flot(${stringify(node.value)})`;
         case "ErrExpression":
             return `øv(${stringify(node.value)})`;
         case "ImportStatement":
-            return `hent ${node.names.join(", ")} fra "${node.source}";`;
+            return `ind ${node.names.join(", ")} fra "${node.source}";`;
         case "ExportStatement":
-            return `eksporter stabil ${stringify(node.name)} = ${stringify(node.value)};`;
+            return `ud stabil ${stringify(node.name)} = ${stringify(node.value)};`;
     }
 }
 

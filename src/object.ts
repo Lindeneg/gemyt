@@ -169,19 +169,19 @@ export class Resultat implements Obj {
     readonly kind = OBJ.RESULTAT;
     constructor(
         public value: Obj,
-        public erFint: boolean
+        public erFlot: boolean
     ) {}
     tekst(): string {
-        return this.erFint ? `fint(${this.value.tekst()})` : `øv(${this.value.tekst()})`;
+        return this.erFlot ? `flot(${this.value.tekst()})` : `øv(${this.value.tekst()})`;
     }
 }
 
-export type InbyggetFn = (...args: Obj[]) => Obj;
+export type IndbyggetFn = (...args: Obj[]) => Obj;
 
 export class Indbygget implements Obj {
     readonly kind = OBJ.INDBYGGET;
     constructor(
-        public fn: InbyggetFn,
+        public fn: IndbyggetFn,
         public name: string = "<indbygget>"
     ) {}
     tekst(): string {
@@ -200,7 +200,7 @@ export class ReturVærdi implements Obj {
 export class BrydSignal implements Obj {
     readonly kind = OBJ.BRYDSIGNAL;
     tekst(): string {
-        return "bryd";
+        return "stop";
     }
 }
 

@@ -6,7 +6,8 @@
     "scripts": {
         "check": "npx tsc --noEmit",
         "test": "vitest run",
-        "dev": "npx tsx src/index.ts gemyt/sart.gemyt"
+        "dev": "npx tsx src/index.ts playground/sart.gemyt",
+        "ttt": "npx tsx src/index.ts playground/tiktoktoe.gemyt"
     },
     "keywords": [],
     "author": "",

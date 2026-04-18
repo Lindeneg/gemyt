@@ -42,7 +42,7 @@ function b(name: string, fn: (...args: Obj[]) => Obj): BuiltinEntry {
     return [name, new Indbygget(fn, name)] as const;
 }
 
-function fint(value: Obj): Resultat {
+function flot(value: Obj): Resultat {
     return new Resultat(value, true);
 }
 
@@ -95,7 +95,7 @@ const commonBuiltins: BuiltinEntry[] = [
         if (obj instanceof Tekst) {
             const n = Number(obj.value);
             if (isNaN(n)) return øv(`kan ikke konvertere "${obj.value}" til tal`);
-            return fint(new Tal(n));
+            return flot(new Tal(n));
         }
         if (obj instanceof Sandhed) return new Tal(obj.value ? 1 : 0);
         return øv(`kan ikke konvertere ${obj.kind} til tal`);
@@ -181,6 +181,10 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
                     process.stdout.write(`svar med j/ja eller n/nej\n`);
                 }
             }),
+            b("ryd", (): Obj => {
+                process.stdout.write("\x1b[2J\x1b[H");
+                return NIKS;
+            }),
             b("vælg", (promptArg, mulighederArg): Obj => {
                 const p = promptArg instanceof Tekst ? promptArg.value : "";
                 if (!(mulighederArg instanceof Liste) || mulighederArg.elements.length === 0) {
@@ -206,7 +210,7 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
                 const s = expectTekst(sti, "læs", 0);
                 if (s instanceof Fejl) return s;
                 try {
-                    return fint(new Tekst(fs.readFileSync(s.value, "utf8")));
+                    return flot(new Tekst(fs.readFileSync(s.value, "utf8")));
                 } catch (e) {
                     return øv(`kunne ikke læse '${s.value}': ${(e as Error).message}`);
                 }
@@ -218,7 +222,7 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
                 if (i instanceof Fejl) return i;
                 try {
                     fs.writeFileSync(s.value, i.value, "utf8");
-                    return fint(NIKS);
+                    return flot(NIKS);
                 } catch (e) {
                     return øv(`kunne ikke skrive '${s.value}': ${(e as Error).message}`);
                 }
@@ -230,7 +234,7 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
                 if (i instanceof Fejl) return i;
                 try {
                     fs.appendFileSync(s.value, i.value, "utf8");
-                    return fint(NIKS);
+                    return flot(NIKS);
                 } catch (e) {
                     return øv(`kunne ikke tilføje til '${s.value}': ${(e as Error).message}`);
                 }
@@ -240,7 +244,7 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
                 if (s instanceof Fejl) return s;
                 try {
                     fs.rmSync(s.value, {recursive: true, force: true});
-                    return fint(NIKS);
+                    return flot(NIKS);
                 } catch (e) {
                     return øv(`kunne ikke slette '${s.value}': ${(e as Error).message}`);
                 }
@@ -250,7 +254,7 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
                 if (s instanceof Fejl) return s;
                 try {
                     const entries = fs.readdirSync(s.value);
-                    return fint(new Liste(entries.map((e) => new Tekst(e))));
+                    return flot(new Liste(entries.map((e) => new Tekst(e))));
                 } catch (e) {
                     return øv(`kunne ikke læse mappe '${s.value}': ${(e as Error).message}`);
                 }
@@ -260,7 +264,7 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
                 if (s instanceof Fejl) return s;
                 try {
                     fs.mkdirSync(s.value, {recursive: true});
-                    return fint(NIKS);
+                    return flot(NIKS);
                 } catch (e) {
                     return øv(`kunne ikke oprette mappe '${s.value}': ${(e as Error).message}`);
                 }
@@ -272,7 +276,7 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
                 if (t instanceof Fejl) return t;
                 try {
                     fs.renameSync(f.value, t.value);
-                    return fint(NIKS);
+                    return flot(NIKS);
                 } catch (e) {
                     return øv(`kunne ikke omdøbe '${f.value}': ${(e as Error).message}`);
                 }
@@ -310,7 +314,7 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
                 const parts: string[] = [];
                 for (const arg of args) {
                     if (!(arg instanceof Tekst))
-                        return new Fejl(`sti.join forventer Tekst argumenter`);
+                        return new Fejl(`stig.vej forventer Tekst argumenter`);
                     parts.push(arg.value);
                 }
                 return new Tekst(path.join(...parts));
@@ -344,7 +348,7 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
                         encoding: "utf8",
                         stdio: ["pipe", "pipe", "pipe"],
                     });
-                    return fint(new Tekst(stdout.trimEnd()));
+                    return flot(new Tekst(stdout.trimEnd()));
                 } catch (e: any) {
                     const stderr = e.stderr?.toString().trimEnd() ?? e.message;
                     return øv(stderr);
@@ -392,7 +396,7 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
                         const s = expectTekst(tekst, "json.fra", 0);
                         if (s instanceof Fejl) return s;
                         try {
-                            return fint(jsToGemyt(JSON.parse(s.value)));
+                            return flot(jsToGemyt(JSON.parse(s.value)));
                         } catch (e) {
                             return øv(`ugyldig JSON: ${(e as Error).message}`);
                         }
@@ -511,6 +515,44 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
                 }
                 return new Liste(result);
             }),
+            b("skub", (list, entry) => {
+                if (!(list instanceof Liste)) {
+                    return new Fejl(`liste.skub kræver en Liste, fik ${list.kind}`);
+                }
+                if (entry === undefined) {
+                    return new Fejl(`liste.skub kræver en værdi som sidste argument`);
+                }
+                list.elements.push(entry);
+                return list;
+            }),
+            b("fyld", (val, amount) => {
+                if (val === undefined) {
+                    return new Fejl(`liste.fyld kræver en værdi som første argument`);
+                }
+                if (!(amount instanceof Tal)) {
+                    return new Fejl(
+                        `liste.fyld kræver et Tal som sidste argument, fik ${amount.kind}`
+                    );
+                }
+                const objs: Obj[] = [];
+                for (let i = 0; i < (amount as Tal).value; i++) {
+                    objs.push(val);
+                }
+                const list = new Liste(objs);
+                return list;
+            }),
+            b("genfyld", (list, val) => {
+                if (!(list instanceof Liste)) {
+                    return new Fejl(`liste.genfyld kræver en Liste, fik ${list.kind}`);
+                }
+                if (val === undefined) {
+                    return new Fejl(`liste.genfyld kræver en værdi som sidste argument`);
+                }
+                for (let i = 0; i < list.elements.length; i++) {
+                    list.elements[i] = val;
+                }
+                return list;
+            }),
         ]),
     ],
 ]);
@@ -527,7 +569,11 @@ function handleImport(stmt: ImportStatement, env: Environment, ctx: ModuleContex
         return NIKS;
     }
 
-    if (stmt.source.startsWith("./") || stmt.source.startsWith("../") || path.isAbsolute(stmt.source)) {
+    if (
+        stmt.source.startsWith("./") ||
+        stmt.source.startsWith("../") ||
+        path.isAbsolute(stmt.source)
+    ) {
         const rawPath = stmt.source.endsWith(".gemyt") ? stmt.source : stmt.source + ".gemyt";
         const resolved = path.isAbsolute(rawPath) ? rawPath : path.resolve(ctx.dir, rawPath);
 
@@ -828,20 +874,20 @@ export function evaluate(node: Statement | Expression, env: Environment): Obj {
 
         case "ImportStatement":
         case "ExportStatement":
-            return new Fejl("hent/eksporter kan kun bruges på øverste niveau");
+            return new Fejl("ind/ud kan kun bruges på øverste niveau");
     }
 }
 
 function matchesPattern(subject: Obj, pattern: Expression, env: Environment): boolean {
     if (pattern.kind === "OkExpression" && pattern.value.kind === "Identifier") {
-        if (subject instanceof Resultat && subject.erFint) {
+        if (subject instanceof Resultat && subject.erFlot) {
             env.define(pattern.value.value, subject.value, true);
             return true;
         }
         return false;
     }
     if (pattern.kind === "ErrExpression" && pattern.value.kind === "Identifier") {
-        if (subject instanceof Resultat && !subject.erFint) {
+        if (subject instanceof Resultat && !subject.erFlot) {
             env.define(pattern.value.value, subject.value, true);
             return true;
         }
@@ -897,7 +943,7 @@ function evalPrefixExpression(operator: string, right: Obj): Obj {
             return new Fejl(`ukendt operator: -${right.kind}`);
         case "stram":
             if (right instanceof Resultat) {
-                if (right.erFint) return right.value;
+                if (right.erFlot) return right.value;
                 return new ReturVærdi(right);
             }
             return right;
@@ -1002,13 +1048,13 @@ function evalDotExpression(left: Obj, field: string): Obj {
         if (field === "afklæd") {
             const captured = left;
             return new Indbygget((): Obj => {
-                if (!captured.erFint)
+                if (!captured.erFlot)
                     // TODO line/col could be nice here
                     return new Fejl(`afklæd kaldt på øv(${captured.value.tekst()})`);
                 return captured.value;
             }, "afklæd");
         }
-        if (field === "erFint") return nativeBoolTilObj(left.erFint);
+        if (field === "erFlot") return nativeBoolTilObj(left.erFlot);
         if (field === "værdi") return left.value;
     }
     if (left instanceof Liste) {

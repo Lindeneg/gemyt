@@ -14,7 +14,10 @@ kør _ af række(10) {
 råb("kvadrat", matematik.kvadrat(tæller.værdi()))
 råb("halv", matematik.halv(tæller.værdi()))
 
-råb("pipe square half", tæller.værdi() |> matematik.kvadrat |> matematik.halv)
+tæller.værdi() 
+    |> matematik.kvadrat 
+    |> matematik.halv
+    |> råb
 
 stabil master_fatman = ["lars", "yanis", "per", "john", "fedte", "ketil"]
 råb(master_fatman, master_fatman.vægt)
@@ -22,7 +25,7 @@ råb(master_fatman, master_fatman.vægt)
 stabil slim_shady = liste.slankekur(master_fatman, gør(x) { x.vægt > 4; })
 råb(slim_shady, slim_shady.vægt)
 
-kør v, i af master_fatman {
+kør i, v af master_fatman {
     råb("kør iter", i, v)
 }
 
@@ -74,7 +77,7 @@ lad halløj = {"svensker": {"er": øv(0)}, "nordmand": {"er": flot(1).afklæd()}
 //}
 
 råb(halløj)
-råb(halløj.svensker.er.erFint, halløj.svensker.er.værdi)
+råb(halløj.svensker.er.erFlot, halløj.svensker.er.værdi)
 råb(halløj.nordmand.er)
 
 stabil hejsa = json.til(halløj)
