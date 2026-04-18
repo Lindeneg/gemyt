@@ -63,8 +63,7 @@ export interface ExportStatement extends Node {
 
 export type Expression =
     | Identifier
-    | IntegerLiteral
-    | FloatLiteral
+    | NumberLiteral
     | StringLiteral
     | BooleanLiteral
     | NullLiteral
@@ -90,13 +89,8 @@ export interface Identifier extends Node {
     value: string;
 }
 
-export interface IntegerLiteral extends Node {
-    kind: "IntegerLiteral";
-    value: number;
-}
-
-export interface FloatLiteral extends Node {
-    kind: "FloatLiteral";
+export interface NumberLiteral extends Node {
+    kind: "NumberLiteral";
     value: number;
 }
 
@@ -225,12 +219,8 @@ export function makeIdentifier(token = ZERO_TOKEN, value = token.literal): Ident
     return {kind: "Identifier", token, value};
 }
 
-export function makeIntegerLiteral(token = ZERO_TOKEN, value = 0): IntegerLiteral {
-    return {kind: "IntegerLiteral", token, value};
-}
-
-export function makeFloatLiteral(token = ZERO_TOKEN, value = 0): FloatLiteral {
-    return {kind: "FloatLiteral", token, value};
+export function makeNumberLiteral(token = ZERO_TOKEN, value = 0): NumberLiteral {
+    return {kind: "NumberLiteral", token, value};
 }
 
 export function makeStringLiteral(token = ZERO_TOKEN, value = token.literal): StringLiteral {
@@ -449,9 +439,7 @@ export function stringify(node: Statement | Expression): string {
             return `{ ${node.statements.map(stringify).join(" ")} }`;
         case "Identifier":
             return node.value;
-        case "IntegerLiteral":
-            return String(node.value);
-        case "FloatLiteral":
+        case "NumberLiteral":
             return String(node.value);
         case "StringLiteral":
             return `"${node.value}"`;

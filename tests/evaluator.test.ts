@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as nodePath from "node:path";
 import {Lexer} from "../src/lexer.js";
 import {Parser} from "../src/parser.js";
-import {evaluateProgram, createModuleContext} from "../src/evaluator.js";
+import {evaluateProgram, createModuleContext, capCodepoints} from "../src/evaluator.js";
 import {
     createEnvironment,
     Tal,
@@ -90,6 +90,8 @@ describe("arithmetic", () => {
     it("division", () => expectTal("10 / 2", 5));
     it("division by zero returns fejl", () => expectFejl("1 / 0", "det kan man"));
     it("float arithmetic", () => expectTal("1.5 + 1.5", 3));
+    it("int/float are one Tal (5 / 2 is 2.5)", () => expectTal("5 / 2", 2.5));
+    it("int + float produces float", () => expectTal("1 + 0.5", 1.5));
     it("mixed precedence", () => expectTal("2 + 3 * 4", 14));
     it("grouped expression", () => expectTal("(2 + 3) * 4", 20));
     it("nested negation", () => expectTal("-(5 + 5)", -10));
@@ -253,18 +255,80 @@ describe("stram propagation", () => {
     `,
             42
         ));
+
+    it("stram on øv at top level becomes a fatal Fejl", () =>
+        expectFejl(`stram øv("filen mangler")`, "stram bobbede op til toppen"));
+
+    it("top-level stram-øv Fejl includes the inner message", () =>
+        expectFejl(`stram øv("filen mangler")`, "filen mangler"));
+
+    it("stram on flot at top level still unwraps to the inner value", () =>
+        expectTal("stram flot(42)", 42));
+
+    it("top-level stram after an ok value continues", () =>
+        expectTal("lad r = flot(7); lad v = stram r; v", 7));
+
+    it("plain øv at top level is NOT treated as fatal (no stram, no ReturVærdi)", () => {
+        const result = evalSource(`øv("bare en værdi")`);
+        expect(result).toBeInstanceOf(Resultat);
+        expect((result as Resultat).erFlot).toBe(false);
+    });
+
+    it("plain flot at top level remains a Resultat (unchanged)", () => {
+        const result = evalSource(`flot(42)`);
+        expect(result).toBeInstanceOf(Resultat);
+        expect((result as Resultat).erFlot).toBe(true);
+    });
+
+    it("stram-øv inside a function does NOT fatal — only bubbles to caller", () => {
+        // f() captures the øv via ReturVærdi; at the call site it becomes a
+        // plain Resultat, which is NOT a top-level ReturVærdi.
+        const result = evalSource(`
+            lad f = gør() { stram øv("inside"); aflever 99 };
+            f()
+        `);
+        expect(result).toBeInstanceOf(Resultat);
+        expect((result as Resultat).erFlot).toBe(false);
+    });
 });
 
 describe("prøv match expressions", () => {
     it("matches a literal value", () => expectTal("prøv 2 { 1 => 10, 2 => 20, 3 => 30 }", 20));
     it("wildcard _ matches anything", () => expectTal("prøv 99 { 1 => 10, _ => 42 }", 42));
     it("identifier arm binds subject", () => expectTal("prøv 7 { x => x + 1 }", 8));
-    it("no match returns niks", () => expectNiks("prøv 5 { 1 => 10, 2 => 20 }"));
+    it("no match returns fejl", () =>
+        expectFejl("prøv 5 { 1 => 10, 2 => 20 }", "intet mønster matchede"));
     it("matches flot(x) pattern", () =>
         expectTal("prøv flot(42) { flot(v) => v, øv(e) => 0 }", 42));
     it("matches øv(x) pattern", () =>
         expectTekst(`prøv øv("oops") { flot(v) => "ok", øv(e) => e }`, "oops"));
-    it("earlier arm wins", () => expectTal("prøv 1 { x => 1, x => 2 }", 1));
+    it("earlier arm wins among equal literals", () =>
+        expectTal("prøv 1 { 1 => 1, 1 => 2 }", 1));
+    it("explicit wildcard fallthrough is allowed", () =>
+        expectTal("prøv 99 { 1 => 10, _ => 42 }", 42));
+    it("rejects unreachable arms after bare identifier", () => {
+        const src = "prøv 1 { x => 1, 2 => 2 }";
+        const lexer = new Lexer(src);
+        const parser = new Parser(lexer);
+        parser.parse();
+        expect(parser.errors.length).toBeGreaterThan(0);
+        expect(parser.errors.join("\n")).toMatch(/bindingsmønster 'x'.*aldrig matche/);
+    });
+    it("rejects unreachable arms after wildcard '_'", () => {
+        const src = "prøv 1 { _ => 0, 1 => 1 }";
+        const lexer = new Lexer(src);
+        const parser = new Parser(lexer);
+        parser.parse();
+        expect(parser.errors.length).toBeGreaterThan(0);
+        expect(parser.errors.join("\n")).toMatch(/jokertegn.*aldrig matche/);
+    });
+    it("allows bare identifier as last arm (catch-all bind)", () =>
+        expectTal("prøv 7 { 1 => 0, x => x + 1 }", 8));
+    it("allows flot(y) as non-last arm (doesn't always match)", () =>
+        expectTekst(
+            `prøv øv("oops") { flot(v) => "ok", øv(e) => e }`,
+            "oops"
+        ));
 });
 
 describe("aflever from program top-level", () => {
@@ -806,6 +870,41 @@ describe("import system", () => {
         }
     });
 
+    it("loading set is cleaned up when import throws (try/finally)", () => {
+        // If an import throws mid-way (e.g. fs.readFileSync on a directory),
+        // the 'loading' set must still be cleaned up. Otherwise a later
+        // import of the same path reports a phantom circular-import error.
+        const tmpDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), "gemyt-test-"));
+        try {
+            // A directory exists-check passes, but readFileSync throws EISDIR.
+            const dirAsModule = nodePath.join(tmpDir, "dir.gemyt");
+            fs.mkdirSync(dirAsModule);
+
+            const ctx = createModuleContext(process.cwd());
+            const src = `ind x fra "${dirAsModule.replace(/\\/g, "/")}"`;
+
+            // First attempt throws (readFileSync on a directory is EISDIR).
+            const lex1 = new Lexer(src);
+            const p1 = new Parser(lex1);
+            const prog1 = p1.parse();
+            expect(() => evaluateProgram(prog1, createEnvironment(), ctx)).toThrow();
+
+            // If finally-cleanup is missing, 'loading' still has the path and
+            // the next attempt reports circular import. With the fix, the next
+            // attempt reaches readFileSync again and throws the same error.
+            const lex2 = new Lexer(src);
+            const p2 = new Parser(lex2);
+            const prog2 = p2.parse();
+            expect(() => evaluateProgram(prog2, createEnvironment(), ctx)).toThrow();
+
+            // And the loading set must be empty between attempts.
+            // (We can't read ctx.loading directly without exposing it, but
+            // the second throw matching the first behavior is proof.)
+        } finally {
+            fs.rmSync(tmpDir, {recursive: true, force: true});
+        }
+    });
+
     it("user file is cached: evaluated only once", () => {
         const tmpDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), "gemyt-test-"));
         try {
@@ -856,5 +955,138 @@ describe("Tal+Tekst coercion on +", () => {
     it("Tekst + Tekst is still string concat", () => expectTekst(`"a" + "b"`, "ab"));
     it("float coerced to string", () => expectTekst(`"pi=" + 3.14`, "pi=3.14"));
     it("coercion in compound +=", () => expectTekst(`lad s = "tæller: "; s += 42; s`, "tæller: 42"));
+});
+
+describe("Primitive+Tekst coercion on + (extended)", () => {
+    it("Sandhed (ja) + Tekst concatenates", () => expectTekst(`"ok: " + ja`, "ok: ja"));
+    it("Sandhed (nej) + Tekst concatenates", () => expectTekst(`"ok: " + nej`, "ok: nej"));
+    it("Niks + Tekst concatenates", () => expectTekst(`"v: " + niks`, "v: niks"));
+    it("Tekst + Sandhed concatenates (primitive on right)", () =>
+        expectTekst(`ja + "!"`, "ja!"));
+    it("Tekst + Niks concatenates (primitive on right)", () =>
+        expectTekst(`niks + "!"`, "niks!"));
+    it("== does NOT coerce Tal and Tekst", () => expectSandhed(`1 == "1"`, false));
+    it("== does NOT coerce Sandhed and Tekst", () => expectSandhed(`ja == "ja"`, false));
+    it("Liste + Tekst is a fejl (composite not coerced)", () =>
+        expectFejl(`[1, 2] + "!"`, "Liste"));
+    it("Ordbog + Tekst is a fejl (composite not coerced)", () =>
+        expectFejl(`{"a": 1} + "!"`, "Ordbog"));
+    it("Sandhed + Sandhed (no Tekst) is a fejl — no coercion", () =>
+        expectFejl(`ja + nej`, "Sandhed"));
+    it("Niks + Niks (no Tekst) is a fejl — no coercion", () => expectFejl(`niks + niks`, "Niks"));
+    it("- does NOT coerce with Tekst", () => expectFejl(`"a" - 1`, "Tekst - Tal"));
+    it("* does NOT coerce with Tekst", () => expectFejl(`"a" * 2`, "Tekst * Tal"));
+});
+
+describe("Structural equality (==, !=)", () => {
+    it("Liste: same elements are equal", () => expectSandhed(`[1, 2, 3] == [1, 2, 3]`, true));
+    it("Liste: different length is not equal", () => expectSandhed(`[1, 2] == [1, 2, 3]`, false));
+    it("Liste: different elements are not equal", () =>
+        expectSandhed(`[1, 2, 3] == [1, 2, 4]`, false));
+    it("Liste: empty are equal", () => expectSandhed(`[] == []`, true));
+    it("Liste: != works", () => expectSandhed(`[1, 2] != [1, 3]`, true));
+    it("Liste: nested equal", () =>
+        expectSandhed(`[[1, 2], [3]] == [[1, 2], [3]]`, true));
+    it("Liste: nested unequal", () =>
+        expectSandhed(`[[1, 2], [3]] == [[1, 2], [4]]`, false));
+    it("Liste: distinct instances bound to vars still equal", () =>
+        expectSandhed(`lad a = [1, 2]; lad b = [1, 2]; a == b`, true));
+
+    it("Ordbog: same pairs are equal", () =>
+        expectSandhed(`{"a": 1, "b": 2} == {"a": 1, "b": 2}`, true));
+    it("Ordbog: key order does not matter", () =>
+        expectSandhed(`{"a": 1, "b": 2} == {"b": 2, "a": 1}`, true));
+    it("Ordbog: different values not equal", () =>
+        expectSandhed(`{"a": 1} == {"a": 2}`, false));
+    it("Ordbog: different size not equal", () =>
+        expectSandhed(`{"a": 1} == {"a": 1, "b": 2}`, false));
+    it("Ordbog: missing key not equal", () =>
+        expectSandhed(`{"a": 1} == {"b": 1}`, false));
+    it("Ordbog: empty are equal", () => expectSandhed(`{} == {}`, true));
+    it("Ordbog: nested liste equal", () =>
+        expectSandhed(`{"xs": [1, 2]} == {"xs": [1, 2]}`, true));
+    it("Ordbog: nested liste unequal", () =>
+        expectSandhed(`{"xs": [1, 2]} == {"xs": [1, 3]}`, false));
+
+    it("Resultat: flot(x) == flot(x)", () => expectSandhed(`flot(1) == flot(1)`, true));
+    it("Resultat: øv(x) == øv(x)", () => expectSandhed(`øv("e") == øv("e")`, true));
+    it("Resultat: flot vs øv not equal", () => expectSandhed(`flot(1) == øv(1)`, false));
+    it("Resultat: different inner values not equal", () =>
+        expectSandhed(`flot(1) == flot(2)`, false));
+    it("Resultat: structural inner values", () =>
+        expectSandhed(`flot([1, 2]) == flot([1, 2])`, true));
+
+    it("Funktion: same closure is equal to itself", () =>
+        expectSandhed(`lad f = gør(x) { x }; f == f`, true));
+    it("Funktion: two distinct closures are not equal", () =>
+        expectSandhed(`lad f = gør(x) { x }; lad g = gør(x) { x }; f == g`, false));
+
+    it("Cross-kind: Liste vs Ordbog not equal", () => expectSandhed(`[] == {}`, false));
+    it("Cross-kind: Resultat vs raw value not equal", () =>
+        expectSandhed(`flot(1) == 1`, false));
+
+    it("Match: Liste pattern matches structurally", () =>
+        expectTal(
+            `prøv [1, 2, 3] { [1, 2, 3] => 42, _ => 0 }`,
+            42
+        ));
+    it("Match: Resultat pattern matches structurally", () =>
+        expectTal(
+            `prøv flot(5) { flot(5) => 42, _ => 0 }`,
+            42
+        ));
+    it("Match: Ordbog pattern matches structurally", () =>
+        expectTal(
+            `prøv {"a": 1} { {"a": 1} => 42, _ => 0 }`,
+            42
+        ));
+
+    // Cycle detection: these would blow the stack without the seen-set.
+    it("Cyclic Liste: self-equality short-circuits", () =>
+        expectSandhed(`lad a = [1]; a[0] = a; a == a`, true));
+    it("Cyclic Liste: two equivalent self-cycles are equal", () =>
+        expectSandhed(`lad a = [1]; lad b = [1]; a[0] = a; b[0] = b; a == b`, true));
+    it("Cyclic Ordbog: self-equality short-circuits", () =>
+        expectSandhed(`lad a = {"x": 1}; a["x"] = a; a == a`, true));
+    it("Cyclic Ordbog: two equivalent self-cycles are equal", () =>
+        expectSandhed(
+            `lad a = {"x": 1}; lad b = {"x": 1}; a["x"] = a; b["x"] = b; a == b`,
+            true
+        ));
+    it("Cyclic Liste: non-cyclic difference still detected", () =>
+        expectSandhed(
+            // Both cycle at index 0, but index 1 differs (2 vs 3).
+            `lad a = [1, 2]; lad b = [1, 3]; a[0] = a; b[0] = b; a == b`,
+            false
+        ));
+});
+
+describe("capCodepoints", () => {
+    it("passes through strings shorter than the cap", () =>
+        expect(capCodepoints("hej", 10)).toBe("hej"));
+    it("passes through strings exactly at the cap", () =>
+        expect(capCodepoints("hejsa", 5)).toBe("hejsa"));
+    it("truncates strings longer than the cap", () =>
+        expect(capCodepoints("hejsa verden", 5)).toBe("hejsa"));
+    it("empty string is unchanged", () => expect(capCodepoints("", 5)).toBe(""));
+    it("cap 0 returns empty", () => expect(capCodepoints("hej", 0)).toBe(""));
+    it("counts Danish letters (BMP) as one codepoint each", () =>
+        expect(capCodepoints("æøå blah", 3)).toBe("æøå"));
+    it("keeps surrogate pairs intact (does not split emoji)", () => {
+        // 🙂 is U+1F642, encoded as a surrogate pair in UTF-16 (string.length === 2).
+        // capCodepoints must count it as ONE codepoint, not two.
+        const s = "a🙂b";
+        expect(s.length).toBe(4); // 1 + 2 (surrogate pair) + 1
+        expect(Array.from(s).length).toBe(3);
+        expect(capCodepoints(s, 2)).toBe("a🙂");
+    });
+    it("does not split a surrogate pair at the boundary", () => {
+        // If we used s.slice(0, 2) instead of codepoint iteration, we'd get
+        // "a\uD83D" — a lone high surrogate, invalid UTF-16. Codepoint-aware
+        // slicing keeps the pair intact or drops it whole.
+        const out = capCodepoints("a🙂b", 1);
+        expect(out).toBe("a");
+        expect([...out].length).toBe(1);
+    });
 });
 

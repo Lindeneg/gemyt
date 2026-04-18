@@ -9,14 +9,13 @@ import {
     makeDotExpression,
     makeErrExpression,
     makeExpressionStatement,
-    makeFloatLiteral,
     makeForEachExpression,
     makeFunctionLiteral,
     makeIdentifier,
     makeIfExpression,
     makeIndexExpression,
     makeInfixExpression,
-    makeIntegerLiteral,
+    makeNumberLiteral,
     makeLetStatement,
     makeMatchExpression,
     makeNullLiteral,
@@ -27,6 +26,9 @@ import {
     makeReturnStatement,
     makeStringLiteral,
     makeWhileExpression,
+    makeAssignExpression,
+    makeImportStatement,
+    makeExportStatement,
     type BlockStatement,
     type ConstStatement,
     type Expression,
@@ -38,9 +40,6 @@ import {
     type ReturnStatement,
     type BreakStatement,
     type Statement,
-    makeAssignExpression,
-    makeImportStatement,
-    makeExportStatement,
     type ImportStatement,
     type ExportStatement,
 } from "./ast.js";
@@ -464,7 +463,7 @@ export class Parser {
             );
             return null;
         }
-        return makeIntegerLiteral(this.#current, value);
+        return makeNumberLiteral(this.#current, value);
     };
 
     #parseFloatLiteral = (): Nullable<Expression> => {
@@ -475,7 +474,7 @@ export class Parser {
             );
             return null;
         }
-        return makeFloatLiteral(this.#current, value);
+        return makeNumberLiteral(this.#current, value);
     };
 
     #parseStringLiteral = (): Expression => {
@@ -641,6 +640,19 @@ export class Parser {
         }
 
         if (!this.#expectPeek(TOKEN.RBRACE)) return null;
+
+        // Flag unreachable arms: `_` and bare identifier patterns always match,
+        // so anything after them is dead code.
+        for (let i = 0; i < expr.arms.length - 1; i++) {
+            const p = expr.arms[i]!.pattern;
+            if (p.kind === "Identifier") {
+                const reason =
+                    p.value === "_" ? "'_' (jokertegn)" : `bindingsmønster '${p.value}'`;
+                this.#errors.push(
+                    `l:${p.token.line}|c:${p.token.col} -> arme efter ${reason} kan aldrig matche`
+                );
+            }
+        }
 
         return expr;
     };

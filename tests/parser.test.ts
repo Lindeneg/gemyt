@@ -9,8 +9,7 @@ import type {
     ConstStatement,
     ReturnStatement,
     Identifier,
-    IntegerLiteral,
-    FloatLiteral,
+    NumberLiteral,
     BooleanLiteral,
     StringLiteral,
     PrefixExpression,
@@ -62,15 +61,15 @@ function testIdentifier(exp?: Expression, value?: string) {
 }
 
 function testIntegerLiteral(exp?: Expression, value?: number) {
-    expect(exp?.kind).toBe("IntegerLiteral");
-    const lit = exp as IntegerLiteral;
+    expect(exp?.kind).toBe("NumberLiteral");
+    const lit = exp as NumberLiteral;
     expect(lit?.value).toBe(value);
     expect(lit?.token.literal).toBe(String(value));
 }
 
 function testFloatLiteral(exp?: Expression, value?: number) {
-    expect(exp?.kind).toBe("FloatLiteral");
-    const lit = exp as FloatLiteral;
+    expect(exp?.kind).toBe("NumberLiteral");
+    const lit = exp as NumberLiteral;
     expect(lit?.value).toBe(value);
 }
 
@@ -301,8 +300,8 @@ describe("DictLiteral", () => {
 
         const expected = new Map([[1, "hello"], [2, "there"]]);
         for (const [key, value] of dict.pairs) {
-            expect(key.kind).toBe("IntegerLiteral");
-            const expectedVal = expected.get((key as IntegerLiteral).value)!;
+            expect(key.kind).toBe("NumberLiteral");
+            const expectedVal = expected.get((key as NumberLiteral).value)!;
             expect((value as StringLiteral).value).toBe(expectedVal);
         }
     });
@@ -840,7 +839,7 @@ describe("ExportStatement", () => {
         const stmt = program.statements[0] as ExportStatement;
         expect(stmt.kind).toBe("ExportStatement");
         expect(stmt.name.value).toBe("x");
-        expect(stmt.value.kind).toBe("IntegerLiteral");
+        expect(stmt.value.kind).toBe("NumberLiteral");
     });
 
     it("parses ud stabil with a function literal", () => {

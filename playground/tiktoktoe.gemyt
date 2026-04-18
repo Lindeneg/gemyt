@@ -52,11 +52,6 @@ stabil lav_tictactoe = gør(spillere) {
             råb(str)
         },
         "placer": gør(idx) {
-            hvis ryk >= bord.vægt {
-                spil_ovre = ja
-                råb("Ingen vinder fundet. Uafgjort!")
-                aflever niks
-            }
             hvis ikke (bord[idx] == TOM) {
                 fejl = "Kvadrat " + idx +  " er allerede taget.\n"
                 aflever niks
@@ -65,6 +60,12 @@ stabil lav_tictactoe = gør(spillere) {
             bord[idx] = SPILLER[spiller_idx]
             ryk += 1
             fejl = niks
+
+            hvis ryk >= bord.vægt {
+                spil_ovre = ja
+                råb("Ingen vinder fundet. Uafgjort!")
+                aflever niks
+            }
 
             kør v af VINNER_IDX {
                 hvis gemyt.type(bord[v[0]]) == "Tekst" og bord[v[0]] == bord[v[1]] og bord[v[0]] == bord[v[2]] {
@@ -97,7 +98,8 @@ gør() {
         spil.render();
 
         prøv gemyt.type(spil.fejl()) {
-            "Tekst" => råb(spil.fejl())
+            "Tekst" => råb(spil.fejl()),
+            _ => niks
         }
 
         spil.nuværende_spiller() + " vælg en kvadrat\n> " |> linjer.tal |> spil.placer

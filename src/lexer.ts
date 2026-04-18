@@ -16,6 +16,9 @@ export class Lexer {
         this.#line = 1;
         this.#col = 0;
 
+        // col starts at 0 so the first advance() (below) — which sees the
+        // initial empty #char, falls through the non-\n branch, and increments
+        // col to 1 — lands on the correct column for input[0].
         this.#advance();
     }
 
@@ -201,10 +204,21 @@ export class Lexer {
         const line = this.#line;
         const col = this.#col;
         const integer = this.#readUntil((ch) => this.#isDigit(ch));
-        if (this.#char === "." && this.#isDigit(this.#peek())) {
-            this.#advance(); // consume "."
-            const decimal = this.#readUntil((ch) => this.#isDigit(ch));
-            return this.#token(TOKEN.FLOAT, `${integer}.${decimal}`, line, col);
+        if (this.#char === ".") {
+            const next = this.#peek();
+            if (this.#isDigit(next)) {
+                this.#advance(); // consume "."
+                const decimal = this.#readUntil((ch) => this.#isDigit(ch));
+                return this.#token(TOKEN.FLOAT, `${integer}.${decimal}`, line, col);
+            }
+            if (!this.#isIdentifierStart(next)) {
+                // "1." with nothing (or punctuation) after — malformed number,
+                // not an int followed by a dot-access. Consume the dot so the
+                // error points at the whole offending literal.
+                this.#advance();
+                return this.#token(TOKEN.ILLEGAL, `${integer}.`, line, col);
+            }
+            // fall through: "1.foo" stays INT + DOT + IDENT (int dot-access).
         }
         return this.#token(TOKEN.INT, integer, line, col);
     }

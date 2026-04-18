@@ -14,13 +14,12 @@ import {
     type IfExpression,
     type BlockStatement,
     type Identifier,
-    type IntegerLiteral,
+    type NumberLiteral,
     type PipeExpression,
     type BreakStatement,
     type NullLiteral,
     type BooleanLiteral,
     type StringLiteral,
-    type FloatLiteral,
     type ArrayLiteral,
     type DictLiteral,
     type PrefixExpression,
@@ -47,8 +46,8 @@ function ident(name: string): Identifier {
     return { kind: "Identifier", token: tok(TOKEN.IDENT, name), value: name };
 }
 
-function int(n: number): IntegerLiteral {
-    return { kind: "IntegerLiteral", token: tok(TOKEN.INT, String(n)), value: n };
+function int(n: number): NumberLiteral {
+    return { kind: "NumberLiteral", token: tok(TOKEN.INT, String(n)), value: n };
 }
 
 describe("AST stringify", () => {
@@ -203,8 +202,8 @@ describe("AST stringify", () => {
         expect(stringify(s)).toBe(`"hej"`);
     });
 
-    it("float literal", () => {
-        const f: FloatLiteral = { kind: "FloatLiteral", token: tok(TOKEN.FLOAT, "3.14"), value: 3.14 };
+    it("number literal (float)", () => {
+        const f: NumberLiteral = { kind: "NumberLiteral", token: tok(TOKEN.FLOAT, "3.14"), value: 3.14 };
         expect(stringify(f)).toBe("3.14");
     });
 

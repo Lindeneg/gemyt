@@ -136,13 +136,26 @@ const commonBuiltins: BuiltinEntry[] = [
     }),
 ];
 
+// Cap a string to `maxChars` codepoints — not UTF-16 code units — so surrogate
+// pairs (emoji, astral-plane characters) stay intact. Exported for testing
+// since readLineSync has no stdin seam.
+export function capCodepoints(s: string, maxChars: number): string {
+    const codepoints = Array.from(s);
+    return codepoints.length > maxChars ? codepoints.slice(0, maxChars).join("") : s;
+}
+
 function readLineSync(prompt: string, chars: number): string {
     process.stdout.write(prompt);
+    // chars*4 covers the worst-case UTF-8 byte length for `chars` codepoints,
+    // but a single readSync may still deliver fewer bytes than the user typed
+    // (terminal line-buffering usually gives us one line; pipes/files may not).
+    // Any input beyond buf.length stays in stdin and is consumed by the next
+    // read — noted for the linjer module rework.
     const buf = Buffer.alloc(chars * 4);
     const n = fs.readSync(0, buf, 0, buf.length, null);
     let end = n;
     while (end > 0 && (buf[end - 1] === 0x0a || buf[end - 1] === 0x0d)) end--;
-    return buf.toString("utf8", 0, end);
+    return capCodepoints(buf.toString("utf8", 0, end), chars);
 }
 
 const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
@@ -577,6 +590,14 @@ function handleImport(stmt: ImportStatement, env: Environment, ctx: ModuleContex
         const rawPath = stmt.source.endsWith(".gemyt") ? stmt.source : stmt.source + ".gemyt";
         const resolved = path.isAbsolute(rawPath) ? rawPath : path.resolve(ctx.dir, rawPath);
 
+        // Invariant: a module lands in `cache` only after evaluateProgram
+        // completes successfully (see the ctx.cache.set below). While a module
+        // is mid-evaluation its path sits in `loading` and nowhere else. So
+        // the two sets are disjoint, and the order of these two checks is
+        // interchangeable in principle — we check `loading` first so a true
+        // cycle surfaces as the specific "cirkulær import" error rather than
+        // a cache miss loop. A cache hit therefore always means "fully loaded,
+        // not a cycle" and is safe to reuse.
         if (ctx.loading.has(resolved)) {
             return new Fejl(`cirkulær import opdaget: '${resolved}'`);
         }
@@ -589,25 +610,32 @@ function handleImport(stmt: ImportStatement, env: Environment, ctx: ModuleContex
 
             ctx.loading.add(resolved);
 
-            const source = fs.readFileSync(resolved, "utf8");
-            const parser = new Parser(new Lexer(source));
-            const prog = parser.parse();
+            let result: Obj;
+            let fileCtx: ModuleContext;
+            try {
+                const source = fs.readFileSync(resolved, "utf8");
+                const parser = new Parser(new Lexer(source));
+                const prog = parser.parse();
 
-            if (parser.errors.length > 0) {
+                if (parser.errors.length > 0) {
+                    return new Fejl(`parserfejl i '${resolved}': ${parser.errors[0]}`);
+                }
+
+                const fileEnv = createEnvironment();
+                fileCtx = {
+                    dir: path.dirname(resolved),
+                    exports: new Map(),
+                    cache: ctx.cache,
+                    loading: ctx.loading,
+                };
+
+                result = evaluateProgram(prog, fileEnv, fileCtx);
+            } finally {
+                // Must clean up even if evaluateProgram/readFileSync throws,
+                // otherwise a later retry of the same path reports a phantom
+                // circular-import error.
                 ctx.loading.delete(resolved);
-                return new Fejl(`parserfejl i '${resolved}': ${parser.errors[0]}`);
             }
-
-            const fileEnv = createEnvironment();
-            const fileCtx: ModuleContext = {
-                dir: path.dirname(resolved),
-                exports: new Map(),
-                cache: ctx.cache,
-                loading: ctx.loading,
-            };
-
-            const result = evaluateProgram(prog, fileEnv, fileCtx);
-            ctx.loading.delete(resolved);
             if (erFejl(result)) return result;
 
             const pairs = new Map<string, OrdbogPair>();
@@ -648,7 +676,20 @@ export function evaluateProgram(program: Program, env: Environment, ctx: ModuleC
         } else {
             result = evaluate(stmt, env);
         }
-        if (result.kind === OBJ.RETURVÆRDI) return (result as ReturVærdi).value;
+        if (result.kind === OBJ.RETURVÆRDI) {
+            const inner = (result as ReturVærdi).value;
+            // A ReturVærdi at program top-level means `stram` bubbled past
+            // every enclosing function — there's nothing left to catch it.
+            // If the wrapped value is a failed Resultat, converting to Fejl
+            // makes the script exit non-zero instead of silently "succeeding"
+            // with the øv value as its program result.
+            if (inner instanceof Resultat && !inner.erFlot) {
+                return new Fejl(
+                    `stram bobbede op til toppen af programmet: ${inner.value.tekst()}`
+                );
+            }
+            return inner;
+        }
         if (erFejl(result)) return result;
     }
     return result;
@@ -689,8 +730,7 @@ export function evaluate(node: Statement | Expression, env: Environment): Obj {
         case "BreakStatement":
             return new BrydSignal();
 
-        case "IntegerLiteral":
-        case "FloatLiteral":
+        case "NumberLiteral":
             return new Tal(node.value);
 
         case "StringLiteral":
@@ -846,7 +886,7 @@ export function evaluate(node: Statement | Expression, env: Environment): Obj {
                     return evaluate(arm.body, matchEnv);
                 }
             }
-            return NIKS;
+            return new Fejl(`prøv: intet mønster matchede ${subject.tekst()}`);
         }
 
         case "FunctionLiteral":
@@ -918,7 +958,18 @@ function isTruthy(obj: Obj): boolean {
     }
 }
 
+// Structural for Liste/Ordbog/Resultat; reference for Funktion (closures carry
+// env — comparing bodies is both expensive and wrong).
 function objEqual(a: Obj, b: Obj): boolean {
+    return objEqualInner(a, b, null);
+}
+
+// Cycle detection: track (a, b) pairs currently on the comparison stack. If we
+// re-enter with the same pair, return true — we assume equality until proven
+// otherwise, and a cycle that closes consistently on both sides is equal.
+// Allocate the map lazily so primitive comparisons stay allocation-free.
+function objEqualInner(a: Obj, b: Obj, seen: Map<Obj, Set<Obj>> | null): boolean {
+    if (a === b) return true;
     if (a.kind !== b.kind) return false;
     switch (a.kind) {
         case OBJ.TAL:
@@ -929,9 +980,62 @@ function objEqual(a: Obj, b: Obj): boolean {
             return (a as Sandhed).value === (b as Sandhed).value;
         case OBJ.NIKS:
             return true;
+        case OBJ.FUNKTION:
+            return false; // a === b already handled above
+        case OBJ.LISTE: {
+            const al = (a as Liste).elements;
+            const bl = (b as Liste).elements;
+            if (al.length !== bl.length) return false;
+            const next = markSeen(a, b, seen);
+            if (next === null) return true;
+            for (let i = 0; i < al.length; i++) {
+                if (!objEqualInner(al[i]!, bl[i]!, next)) return false;
+            }
+            return true;
+        }
+        case OBJ.ORDBOG: {
+            const ap = (a as Ordbog).pairs;
+            const bp = (b as Ordbog).pairs;
+            if (ap.size !== bp.size) return false;
+            const next = markSeen(a, b, seen);
+            if (next === null) return true;
+            for (const [key, pair] of ap) {
+                const other = bp.get(key);
+                if (!other) return false;
+                if (!objEqualInner(pair.value, other.value, next)) return false;
+            }
+            return true;
+        }
+        case OBJ.RESULTAT: {
+            const ar = a as Resultat;
+            const br = b as Resultat;
+            if (ar.erFlot !== br.erFlot) return false;
+            const next = markSeen(a, b, seen);
+            if (next === null) return true;
+            return objEqualInner(ar.value, br.value, next);
+        }
         default:
             return false;
     }
+}
+
+// Returns null if (a, b) is already on the stack (cycle — caller treats as
+// equal). Otherwise returns the seen-map with (a, b) added, allocating lazily.
+function markSeen(
+    a: Obj,
+    b: Obj,
+    seen: Map<Obj, Set<Obj>> | null
+): Map<Obj, Set<Obj>> | null {
+    if (seen) {
+        const bs = seen.get(a);
+        if (bs?.has(b)) return null;
+        if (bs) bs.add(b);
+        else seen.set(a, new Set([b]));
+        return seen;
+    }
+    const m = new Map<Obj, Set<Obj>>();
+    m.set(a, new Set([b]));
+    return m;
 }
 
 function evalPrefixExpression(operator: string, right: Obj): Obj {
@@ -952,21 +1056,32 @@ function evalPrefixExpression(operator: string, right: Obj): Obj {
     }
 }
 
+function isCoercibleToTekst(obj: Obj): boolean {
+    return (
+        obj instanceof Tal ||
+        obj instanceof Tekst ||
+        obj instanceof Sandhed ||
+        obj instanceof Niks
+    );
+}
+
 function evalInfixExpression(operator: string, left: Obj, right: Obj): Obj {
     if (left instanceof Tal && right instanceof Tal) {
         return evalTalInfixExpression(operator, left, right);
     }
+    // `+` coerces any primitive (Tal/Tekst/Sandhed/Niks) to Tekst when at
+    // least one side is already Tekst. Composite types (Liste, Ordbog) and
+    // every non-`+` operator remain strict — notably `==` does NOT coerce.
     if (
         operator === "+" &&
-        (left instanceof Tal || left instanceof Tekst) &&
-        (right instanceof Tal || right instanceof Tekst)
+        (left instanceof Tekst || right instanceof Tekst) &&
+        isCoercibleToTekst(left) &&
+        isCoercibleToTekst(right)
     ) {
         return new Tekst(left.tekst() + right.tekst());
     }
     if (left instanceof Tekst && right instanceof Tekst) {
         switch (operator) {
-            case "+":
-                return new Tekst(left.value + right.value);
             case "==":
                 return nativeBoolTilObj(left.value === right.value);
             case "!=":

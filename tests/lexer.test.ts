@@ -391,6 +391,37 @@ hvis (5 < 10) {
         expect(tok.kind).toBe(TOKEN.ILLEGAL);
     });
 
+    it("flags '1.' with no trailing digit as ILLEGAL", () => {
+        const lexer = new Lexer("1.");
+        const t = lexer.next();
+        expect(t.kind).toBe(TOKEN.ILLEGAL);
+        expect(t.literal).toBe("1.");
+    });
+
+    it("flags '1. + 2' with a trailing non-digit as ILLEGAL followed by rest", () => {
+        expectTokens("1. + 2", [
+            {kind: TOKEN.ILLEGAL, literal: "1."},
+            {kind: TOKEN.PLUS, literal: "+"},
+            {kind: TOKEN.INT, literal: "2"},
+        ]);
+    });
+
+    it("preserves '1.foo' as INT + DOT + IDENT (for int dot-access)", () => {
+        expectTokens("1.foo", [
+            {kind: TOKEN.INT, literal: "1"},
+            {kind: TOKEN.DOT, literal: "."},
+            {kind: TOKEN.IDENT, literal: "foo"},
+        ]);
+    });
+
+    it("still lexes '1.2.3' as FLOAT + DOT + INT", () => {
+        expectTokens("1.2.3", [
+            {kind: TOKEN.FLOAT, literal: "1.2"},
+            {kind: TOKEN.DOT, literal: "."},
+            {kind: TOKEN.INT, literal: "3"},
+        ]);
+    });
+
     it("should track line and column numbers", () => {
         const input = `lad x = 5;
 sig(x);`;
