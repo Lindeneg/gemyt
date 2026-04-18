@@ -39,7 +39,7 @@ import {
 } from "../src/ast.js";
 
 function tok(kind: number, literal: string): Token {
-    return { kind, literal, line: 0, col: 0 };
+    return { kind, literal, line: 0, col: 0, offset: 0, length: literal.length };
 }
 
 function ident(name: string): Identifier {

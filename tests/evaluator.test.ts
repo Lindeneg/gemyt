@@ -292,6 +292,102 @@ describe("stram propagation", () => {
     });
 });
 
+describe("Fejl locations (line/col/offset/length)", () => {
+    function fejlAt(input: string, line: number, col: number) {
+        const result = evalSource(input);
+        expect(result).toBeInstanceOf(Fejl);
+        const f = result as Fejl;
+        expect(f.location, `Fejl missing location for: ${input}`).not.toBeNull();
+        expect(f.location!.line).toBe(line);
+        expect(f.location!.col).toBe(col);
+    }
+
+    it("undefined identifier points at the identifier", () =>
+        // `foo` is at col 1
+        fejlAt("foo", 1, 1));
+
+    it("undefined identifier mid-expression points at the identifier", () =>
+        // `bar` is at col 5
+        fejlAt("1 + bar", 1, 5));
+
+    it("type mismatch on infix points at operator", () =>
+        // `+` is at col 5 (inside `lad x = 1 + ja` — wait that coerces. Use `-`)
+        // `1 - ja` — `-` at col 3
+        fejlAt("1 - ja", 1, 3));
+
+    it("division by zero points at the infix operator", () =>
+        // `1 / 0` — `/` at col 3
+        fejlAt("1 / 0", 1, 3));
+
+    it("non-iterable error points at the iterable expression", () =>
+        // `kør x af 42 { x }` — `42` at col 10
+        fejlAt("kør x af 42 { x }", 1, 10));
+
+    it("stram on øv at top level carries location of the statement", () =>
+        // `stram øv(...)` — statement starts at col 1
+        fejlAt(`stram øv("x")`, 1, 1));
+
+    it("stop outside a loop points at the statement", () => fejlAt("stop", 1, 1));
+
+    it("unknown stdlib module points at the import statement", () =>
+        fejlAt(`ind ikkeekisterer fra "gemyt"`, 1, 1));
+
+    it("builtin error gets stamped with call-site location", () => {
+        // `liste.slankekur kræver en Liste` — stamped at the call expression,
+        // which starts at `liste` — but the call *node's* token is `(`.
+        // We just assert location is present and correct line.
+        const result = evalSource(`liste.slankekur(42, gør(x) { ja })`);
+        expect(result).toBeInstanceOf(Fejl);
+        expect((result as Fejl).location).not.toBeNull();
+        expect((result as Fejl).location!.line).toBe(1);
+    });
+
+    it("location has offset and length fields", () => {
+        const result = evalSource("foo");
+        expect(result).toBeInstanceOf(Fejl);
+        const loc = (result as Fejl).location!;
+        expect(loc.offset).toBe(0);
+        expect(loc.length).toBe(3);
+    });
+
+    it("location tracks line across newlines", () => {
+        const result = evalSource("\n\nfoo");
+        expect(result).toBeInstanceOf(Fejl);
+        const loc = (result as Fejl).location!;
+        expect(loc.line).toBe(3);
+        expect(loc.col).toBe(1);
+    });
+
+    it("Fejl.tekst() renders line:col when location is set", () => {
+        const result = evalSource("foo") as Fejl;
+        expect(result.tekst()).toContain("[1:1]");
+    });
+
+    it("Fejl without location renders bare message", () => {
+        const f = new Fejl("bare en besked");
+        expect(f.tekst()).toBe("Fejl: bare en besked");
+    });
+});
+
+describe("stop boundary semantics", () => {
+    it("stop at top-level is a Fejl", () => expectFejl("stop", "brud uden for løkke"));
+
+    it("stop inside a function but outside a loop is a Fejl", () =>
+        expectFejl(`lad f = gør() { stop }; f()`, "brud uden for løkke"));
+
+    it("stop inside a nested function body (no loop) is a Fejl even if called from a loop", () =>
+        expectFejl(
+            `lad f = gør() { stop }; mens ja { f() }`,
+            "brud uden for løkke"
+        ));
+
+    it("stop still exits an enclosing mens even when after function definition", () =>
+        expectTal(
+            `lad i = 0; mens ja { lad f = gør() { 1 }; f(); stop }; i`,
+            0
+        ));
+});
+
 describe("prøv match expressions", () => {
     it("matches a literal value", () => expectTal("prøv 2 { 1 => 10, 2 => 20, 3 => 30 }", 20));
     it("wildcard _ matches anything", () => expectTal("prøv 99 { 1 => 10, _ => 42 }", 42));

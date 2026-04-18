@@ -25,7 +25,14 @@ export class Lexer {
     next(): Token {
         this.#skipWhitespace();
 
-        if (this.#char === "") return this.#token(TOKEN.EOF, "");
+        // Capture the start of the token BEFORE any advance() calls, so
+        // line/col/offset point at the first character of the token no matter
+        // how many characters the token consumes.
+        const sLine = this.#line;
+        const sCol = this.#col;
+        const sOff = this.#currentIdx;
+
+        if (this.#char === "") return this.#mkToken(TOKEN.EOF, "", sLine, sCol, sOff, 0);
 
         if (this.#char === "/" && this.#peek() === "/") {
             this.#skipComment();
@@ -37,112 +44,117 @@ export class Lexer {
         switch (this.#char) {
             case "=":
                 if (this.#peek() === "=") {
-                    token = this.#tokenFromRange(TOKEN.EQ, 1);
+                    token = this.#range(TOKEN.EQ, 2, sLine, sCol, sOff);
                 } else if (this.#peek() === ">") {
-                    token = this.#tokenFromRange(TOKEN.ARROW, 1);
+                    token = this.#range(TOKEN.ARROW, 2, sLine, sCol, sOff);
                 } else {
-                    token = this.#token(TOKEN.ASSIGN, this.#char);
+                    token = this.#mkToken(TOKEN.ASSIGN, this.#char, sLine, sCol, sOff, 1);
                 }
                 break;
             case "!":
                 if (this.#peek() === "=") {
-                    token = this.#tokenFromRange(TOKEN.NOT_EQ, 1);
+                    token = this.#range(TOKEN.NOT_EQ, 2, sLine, sCol, sOff);
                 } else {
-                    token = this.#token(TOKEN.ILLEGAL, this.#char);
+                    token = this.#mkToken(TOKEN.ILLEGAL, this.#char, sLine, sCol, sOff, 1);
                 }
                 break;
             case "<":
                 if (this.#peek() === "=") {
-                    token = this.#tokenFromRange(TOKEN.LT_OR_EQ, 1);
+                    token = this.#range(TOKEN.LT_OR_EQ, 2, sLine, sCol, sOff);
                 } else {
-                    token = this.#token(TOKEN.LT, this.#char);
+                    token = this.#mkToken(TOKEN.LT, this.#char, sLine, sCol, sOff, 1);
                 }
                 break;
             case ">":
                 if (this.#peek() === "=") {
-                    token = this.#tokenFromRange(TOKEN.GT_OR_EQ, 1);
+                    token = this.#range(TOKEN.GT_OR_EQ, 2, sLine, sCol, sOff);
                 } else {
-                    token = this.#token(TOKEN.GT, this.#char);
+                    token = this.#mkToken(TOKEN.GT, this.#char, sLine, sCol, sOff, 1);
                 }
                 break;
             case "|":
                 if (this.#peek() === ">") {
-                    token = this.#tokenFromRange(TOKEN.PIPE, 1);
+                    token = this.#range(TOKEN.PIPE, 2, sLine, sCol, sOff);
                 } else {
-                    token = this.#token(TOKEN.ILLEGAL, this.#char);
+                    token = this.#mkToken(TOKEN.ILLEGAL, this.#char, sLine, sCol, sOff, 1);
                 }
                 break;
             case "+":
                 if (this.#peek() === "=") {
-                    token = this.#tokenFromRange(TOKEN.PLUS_ASSIGN, 1);
+                    token = this.#range(TOKEN.PLUS_ASSIGN, 2, sLine, sCol, sOff);
                 } else {
-                    token = this.#token(TOKEN.PLUS, this.#char);
+                    token = this.#mkToken(TOKEN.PLUS, this.#char, sLine, sCol, sOff, 1);
                 }
                 break;
             case "-":
                 if (this.#peek() === "=") {
-                    token = this.#tokenFromRange(TOKEN.MINUS_ASSIGN, 1);
+                    token = this.#range(TOKEN.MINUS_ASSIGN, 2, sLine, sCol, sOff);
                 } else {
-                    token = this.#token(TOKEN.MINUS, this.#char);
+                    token = this.#mkToken(TOKEN.MINUS, this.#char, sLine, sCol, sOff, 1);
                 }
                 break;
             case "*":
                 if (this.#peek() === "=") {
-                    token = this.#tokenFromRange(TOKEN.ASTERISK_ASSIGN, 1);
+                    token = this.#range(TOKEN.ASTERISK_ASSIGN, 2, sLine, sCol, sOff);
                 } else {
-                    token = this.#token(TOKEN.ASTERISK, this.#char);
+                    token = this.#mkToken(TOKEN.ASTERISK, this.#char, sLine, sCol, sOff, 1);
                 }
                 break;
             case "/":
                 if (this.#peek() === "=") {
-                    token = this.#tokenFromRange(TOKEN.SLASH_ASSIGN, 1);
+                    token = this.#range(TOKEN.SLASH_ASSIGN, 2, sLine, sCol, sOff);
                 } else {
-                    token = this.#token(TOKEN.SLASH, this.#char);
+                    token = this.#mkToken(TOKEN.SLASH, this.#char, sLine, sCol, sOff, 1);
                 }
                 break;
             case "%":
-                token = this.#token(TOKEN.MODULO, this.#char);
+                token = this.#mkToken(TOKEN.MODULO, this.#char, sLine, sCol, sOff, 1);
                 break;
             case ";":
-                token = this.#token(TOKEN.SEMICOLON, this.#char);
+                token = this.#mkToken(TOKEN.SEMICOLON, this.#char, sLine, sCol, sOff, 1);
                 break;
             case "(":
-                token = this.#token(TOKEN.LPAREN, this.#char);
+                token = this.#mkToken(TOKEN.LPAREN, this.#char, sLine, sCol, sOff, 1);
                 break;
             case ")":
-                token = this.#token(TOKEN.RPAREN, this.#char);
+                token = this.#mkToken(TOKEN.RPAREN, this.#char, sLine, sCol, sOff, 1);
                 break;
             case "{":
-                token = this.#token(TOKEN.LBRACE, this.#char);
+                token = this.#mkToken(TOKEN.LBRACE, this.#char, sLine, sCol, sOff, 1);
                 break;
             case "}":
-                token = this.#token(TOKEN.RBRACE, this.#char);
+                token = this.#mkToken(TOKEN.RBRACE, this.#char, sLine, sCol, sOff, 1);
                 break;
             case "[":
-                token = this.#token(TOKEN.LBRACKET, this.#char);
+                token = this.#mkToken(TOKEN.LBRACKET, this.#char, sLine, sCol, sOff, 1);
                 break;
             case "]":
-                token = this.#token(TOKEN.RBRACKET, this.#char);
+                token = this.#mkToken(TOKEN.RBRACKET, this.#char, sLine, sCol, sOff, 1);
                 break;
             case ",":
-                token = this.#token(TOKEN.COMMA, this.#char);
+                token = this.#mkToken(TOKEN.COMMA, this.#char, sLine, sCol, sOff, 1);
                 break;
             case ":":
-                token = this.#token(TOKEN.COLON, this.#char);
+                token = this.#mkToken(TOKEN.COLON, this.#char, sLine, sCol, sOff, 1);
                 break;
             case ".":
-                token = this.#token(TOKEN.DOT, this.#char);
+                token = this.#mkToken(TOKEN.DOT, this.#char, sLine, sCol, sOff, 1);
                 break;
-            case '"':
-                token = this.#token(TOKEN.STRING, this.#string());
+            case '"': {
+                const literal = this.#string();
+                // #currentIdx is on the closing quote; next() advances past it.
+                // Span covers opening quote through closing quote inclusive.
+                const length = this.#currentIdx - sOff + 1;
+                token = this.#mkToken(TOKEN.STRING, literal, sLine, sCol, sOff, length);
                 break;
+            }
             default:
                 if (this.#isIdentifierStart(this.#char)) {
-                    return this.#identifier();
+                    return this.#identifier(sLine, sCol, sOff);
                 } else if (this.#isDigit(this.#char)) {
-                    return this.#number();
+                    return this.#number(sLine, sCol, sOff);
                 } else {
-                    token = this.#token(TOKEN.ILLEGAL, this.#char);
+                    token = this.#mkToken(TOKEN.ILLEGAL, this.#char, sLine, sCol, sOff, 1);
                 }
                 break;
         }
@@ -200,34 +212,32 @@ export class Lexer {
         return result;
     }
 
-    #number(): Token {
-        const line = this.#line;
-        const col = this.#col;
+    #number(sLine: number, sCol: number, sOff: number): Token {
         const integer = this.#readUntil((ch) => this.#isDigit(ch));
         if (this.#char === ".") {
             const next = this.#peek();
             if (this.#isDigit(next)) {
                 this.#advance(); // consume "."
                 const decimal = this.#readUntil((ch) => this.#isDigit(ch));
-                return this.#token(TOKEN.FLOAT, `${integer}.${decimal}`, line, col);
+                const lit = `${integer}.${decimal}`;
+                return this.#mkToken(TOKEN.FLOAT, lit, sLine, sCol, sOff, lit.length);
             }
             if (!this.#isIdentifierStart(next)) {
                 // "1." with nothing (or punctuation) after — malformed number,
                 // not an int followed by a dot-access. Consume the dot so the
                 // error points at the whole offending literal.
                 this.#advance();
-                return this.#token(TOKEN.ILLEGAL, `${integer}.`, line, col);
+                const lit = `${integer}.`;
+                return this.#mkToken(TOKEN.ILLEGAL, lit, sLine, sCol, sOff, lit.length);
             }
             // fall through: "1.foo" stays INT + DOT + IDENT (int dot-access).
         }
-        return this.#token(TOKEN.INT, integer, line, col);
+        return this.#mkToken(TOKEN.INT, integer, sLine, sCol, sOff, integer.length);
     }
 
-    #identifier(): Token {
-        const line = this.#line;
-        const col = this.#col;
+    #identifier(sLine: number, sCol: number, sOff: number): Token {
         const literal = this.#readUntil((ch) => this.#isIdentifierChar(ch));
-        return this.#token(lookupIdent(literal), literal, line, col);
+        return this.#mkToken(lookupIdent(literal), literal, sLine, sCol, sOff, literal.length);
     }
 
     #peek(): string {
@@ -254,13 +264,19 @@ export class Lexer {
         }
     }
 
-    #tokenFromRange(kind: TokenKind, r: number): Token {
+    #range(
+        kind: TokenKind,
+        length: number,
+        sLine: number,
+        sCol: number,
+        sOff: number
+    ): Token {
         let literal = this.#char;
-        for (let i = 0; i < r; i++) {
+        for (let i = 0; i < length - 1; i++) {
             this.#advance();
             literal += this.#char;
         }
-        return this.#token(kind, literal);
+        return this.#mkToken(kind, literal, sLine, sCol, sOff, length);
     }
 
     #readUntil(pred: (ch: string) => boolean): string {
@@ -294,12 +310,14 @@ export class Lexer {
         return ch >= "0" && ch <= "9";
     }
 
-    #token(kind: TokenKind, literal: string, line = this.#line, col = this.#col): Token {
-        return {
-            kind,
-            literal,
-            line,
-            col,
-        };
+    #mkToken(
+        kind: TokenKind,
+        literal: string,
+        line: number,
+        col: number,
+        offset: number,
+        length: number
+    ): Token {
+        return {kind, literal, line, col, offset, length};
     }
 }

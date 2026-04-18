@@ -577,4 +577,98 @@ sig(x);`;
             {kind: TOKEN.EOF, literal: ""},
         ]);
     });
+
+    describe("token spans (line/col/offset/length)", () => {
+        it("single-char token records start position and length 1", () => {
+            const lexer = new Lexer("+");
+            const tok = lexer.next();
+            expect(tok.line).toBe(1);
+            expect(tok.col).toBe(1);
+            expect(tok.offset).toBe(0);
+            expect(tok.length).toBe(1);
+        });
+
+        it("two-char operator spans start col and length 2 (==)", () => {
+            const lexer = new Lexer("==");
+            const tok = lexer.next();
+            expect(tok.kind).toBe(TOKEN.EQ);
+            expect(tok.line).toBe(1);
+            expect(tok.col).toBe(1);
+            expect(tok.offset).toBe(0);
+            expect(tok.length).toBe(2);
+        });
+
+        it("col points at start of two-char operator, not second char", () => {
+            // Regression guard: prior #tokenFromRange reported col of the
+            // second char instead of the first.
+            const lexer = new Lexer("  ==");
+            const tok = lexer.next();
+            expect(tok.col).toBe(3);
+            expect(tok.offset).toBe(2);
+        });
+
+        it("identifier records correct start and length", () => {
+            const lexer = new Lexer("  foo");
+            const tok = lexer.next();
+            expect(tok.kind).toBe(TOKEN.IDENT);
+            expect(tok.line).toBe(1);
+            expect(tok.col).toBe(3);
+            expect(tok.offset).toBe(2);
+            expect(tok.length).toBe(3);
+        });
+
+        it("integer literal records length", () => {
+            const lexer = new Lexer("123");
+            const tok = lexer.next();
+            expect(tok.length).toBe(3);
+            expect(tok.offset).toBe(0);
+        });
+
+        it("float literal length covers whole literal", () => {
+            const lexer = new Lexer("3.14");
+            const tok = lexer.next();
+            expect(tok.kind).toBe(TOKEN.FLOAT);
+            expect(tok.length).toBe(4);
+        });
+
+        it("string literal length covers both quotes", () => {
+            const lexer = new Lexer(`"hej"`);
+            const tok = lexer.next();
+            expect(tok.kind).toBe(TOKEN.STRING);
+            expect(tok.literal).toBe("hej");
+            expect(tok.offset).toBe(0);
+            expect(tok.length).toBe(5);
+        });
+
+        it("line advances with newlines and col resets", () => {
+            const lexer = new Lexer("a\nbb");
+            const first = lexer.next();
+            const second = lexer.next();
+            expect(first.line).toBe(1);
+            expect(first.col).toBe(1);
+            expect(first.offset).toBe(0);
+            expect(second.line).toBe(2);
+            expect(second.col).toBe(1);
+            expect(second.offset).toBe(2);
+            expect(second.length).toBe(2);
+        });
+
+        it("offset is monotonically increasing across tokens", () => {
+            const lexer = new Lexer("a + b");
+            const a = lexer.next();
+            const plus = lexer.next();
+            const b = lexer.next();
+            expect(a.offset).toBe(0);
+            expect(plus.offset).toBe(2);
+            expect(b.offset).toBe(4);
+        });
+
+        it("EOF token has length 0 at end of input", () => {
+            const lexer = new Lexer("ab");
+            lexer.next();
+            const eof = lexer.next();
+            expect(eof.kind).toBe(TOKEN.EOF);
+            expect(eof.length).toBe(0);
+        });
+    });
 });

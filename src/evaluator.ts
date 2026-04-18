@@ -9,9 +9,16 @@ import {
     type Expression,
     type ImportStatement,
     type ExportStatement,
+    type PrefixExpression,
+    type InfixExpression,
+    type IndexExpression,
+    type DotExpression,
+    type CallExpression,
 } from "./ast.js";
 import {
-    type Obj,
+    type Value,
+    type Signal,
+    type EvalResult,
     type Environment,
     type OrdbogPair,
     OBJ,
@@ -28,6 +35,8 @@ import {
     BrydSignal,
     Niks,
     Fejl,
+    fejlAt,
+    stampLocation,
     nativeBoolTilObj,
     erFejl,
     erSignal,
@@ -36,13 +45,13 @@ import {
     createEnvironment,
 } from "./object.js";
 
-type BuiltinEntry = readonly [string, Obj];
+type BuiltinEntry = readonly [string, Value];
 
-function b(name: string, fn: (...args: Obj[]) => Obj): BuiltinEntry {
+function b(name: string, fn: (...args: Value[]) => Value | Fejl): BuiltinEntry {
     return [name, new Indbygget(fn, name)] as const;
 }
 
-function flot(value: Obj): Resultat {
+function flot(value: Value): Resultat {
     return new Resultat(value, true);
 }
 
@@ -52,7 +61,7 @@ function øv(msg: string): Resultat {
 
 export interface ModuleContext {
     dir: string;
-    exports: Map<string, Obj>;
+    exports: Map<string, Value>;
     cache: Map<string, Ordbog>;
     loading: Set<string>;
 }
@@ -70,7 +79,7 @@ function makeModuleOrdbog(entries: BuiltinEntry[]): Ordbog {
     return new Ordbog(pairs);
 }
 
-function expectTekst(arg: Obj | undefined, name: string, pos: number): Tekst | Fejl {
+function expectTekst(arg: Value | undefined, name: string, pos: number): Tekst | Fejl {
     if (!(arg instanceof Tekst)) {
         return new Fejl(
             `${name} forventer Tekst som argument ${pos + 1}, fik ${arg?.kind ?? "niks"}`
@@ -162,7 +171,7 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
     [
         "linjer",
         makeModuleOrdbog([
-            b("spørgsmål", (promptArg, sizeArg): Obj => {
+            b("spørgsmål", (promptArg, sizeArg): Value | Fejl => {
                 const p = promptArg instanceof Tekst ? promptArg.value : "";
                 if (
                     !(sizeArg instanceof Tal) ||
@@ -175,7 +184,7 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
                 }
                 return new Tekst(readLineSync(p, sizeArg.value));
             }),
-            b("tal", (promptArg): Obj => {
+            b("tal", (promptArg): Value | Fejl => {
                 const p = promptArg instanceof Tekst ? promptArg.value : "";
                 while (true) {
                     const raw = readLineSync(p, 32);
@@ -184,7 +193,7 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
                     process.stdout.write(`'${raw}' er ikke et tal, prøv igen\n`);
                 }
             }),
-            b("bekræft", (promptArg): Obj => {
+            b("bekræft", (promptArg): Value | Fejl => {
                 const base = promptArg instanceof Tekst ? promptArg.value : "";
                 const p = base.endsWith(" ") ? base + "(j/n) " : base + " (j/n) ";
                 while (true) {
@@ -194,11 +203,11 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
                     process.stdout.write(`svar med j/ja eller n/nej\n`);
                 }
             }),
-            b("ryd", (): Obj => {
+            b("ryd", (): Value | Fejl => {
                 process.stdout.write("\x1b[2J\x1b[H");
                 return NIKS;
             }),
-            b("vælg", (promptArg, mulighederArg): Obj => {
+            b("vælg", (promptArg, mulighederArg): Value | Fejl => {
                 const p = promptArg instanceof Tekst ? promptArg.value : "";
                 if (!(mulighederArg instanceof Liste) || mulighederArg.elements.length === 0) {
                     return new Fejl("vælg: andet argument skal være en ikke-tom Liste");
@@ -374,7 +383,7 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
         "json",
         makeModuleOrdbog(
             (() => {
-                function jsToGemyt(val: unknown): Obj {
+                function jsToGemyt(val: unknown): Value {
                     if (val === null || val === undefined) return NIKS;
                     if (typeof val === "number") return new Tal(val);
                     if (typeof val === "string") return new Tekst(val);
@@ -390,7 +399,7 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
                     }
                     return NIKS;
                 }
-                function gemytToJs(obj: Obj): unknown {
+                function gemytToJs(obj: Value): unknown {
                     if (obj instanceof Tal) return obj.value;
                     if (obj instanceof Tekst) return obj.value;
                     if (obj instanceof Sandhed) return obj.value;
@@ -516,14 +525,14 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
     [
         "liste",
         makeModuleOrdbog([
-            b("slankekur", (list, fn) => {
+            b("slankekur", (list, fn): Value | Fejl => {
                 if (!(list instanceof Liste)) {
                     return new Fejl(`liste.slankekur kræver en Liste, fik ${list.kind}`);
                 }
-                const result: Obj[] = [];
+                const result: Value[] = [];
                 for (const el of list.elements) {
                     const val = applyFunction(fn, [el]);
-                    if (erSignal(val)) return val;
+                    if (val instanceof Fejl) return val;
                     if (isTruthy(val)) result.push(el);
                 }
                 return new Liste(result);
@@ -547,7 +556,7 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
                         `liste.fyld kræver et Tal som sidste argument, fik ${amount.kind}`
                     );
                 }
-                const objs: Obj[] = [];
+                const objs: Value[] = [];
                 for (let i = 0; i < (amount as Tal).value; i++) {
                     objs.push(val);
                 }
@@ -570,13 +579,13 @@ const STDLIB: ReadonlyMap<string, Ordbog> = new Map([
     ],
 ]);
 
-const BUILTINS: ReadonlyMap<string, Obj> = new Map(commonBuiltins);
+const BUILTINS: ReadonlyMap<string, Value> = new Map(commonBuiltins);
 
-function handleImport(stmt: ImportStatement, env: Environment, ctx: ModuleContext): Obj {
+function handleImport(stmt: ImportStatement, env: Environment, ctx: ModuleContext): EvalResult {
     if (stmt.source === "gemyt") {
         for (const name of stmt.names) {
             const mod = STDLIB.get(name);
-            if (!mod) return new Fejl(`ukendt standardbibliotekets modul: '${name}'`);
+            if (!mod) return fejlAt(stmt, `ukendt standardbibliotekets modul: '${name}'`);
             env.define(name, mod, false);
         }
         return NIKS;
@@ -599,18 +608,18 @@ function handleImport(stmt: ImportStatement, env: Environment, ctx: ModuleContex
         // a cache miss loop. A cache hit therefore always means "fully loaded,
         // not a cycle" and is safe to reuse.
         if (ctx.loading.has(resolved)) {
-            return new Fejl(`cirkulær import opdaget: '${resolved}'`);
+            return fejlAt(stmt, `cirkulær import opdaget: '${resolved}'`);
         }
 
         let moduleOrdbog = ctx.cache.get(resolved);
         if (!moduleOrdbog) {
             if (!fs.existsSync(resolved)) {
-                return new Fejl(`filen '${resolved}' findes ikke`);
+                return fejlAt(stmt, `filen '${resolved}' findes ikke`);
             }
 
             ctx.loading.add(resolved);
 
-            let result: Obj;
+            let result: EvalResult;
             let fileCtx: ModuleContext;
             try {
                 const source = fs.readFileSync(resolved, "utf8");
@@ -618,7 +627,7 @@ function handleImport(stmt: ImportStatement, env: Environment, ctx: ModuleContex
                 const prog = parser.parse();
 
                 if (parser.errors.length > 0) {
-                    return new Fejl(`parserfejl i '${resolved}': ${parser.errors[0]}`);
+                    return fejlAt(stmt, `parserfejl i '${resolved}': ${parser.errors[0]}`);
                 }
 
                 const fileEnv = createEnvironment();
@@ -649,16 +658,16 @@ function handleImport(stmt: ImportStatement, env: Environment, ctx: ModuleContex
 
         for (const name of stmt.names) {
             const pair = moduleOrdbog.pairs.get(`tekst:${name}`);
-            if (!pair) return new Fejl(`'${name}' er ikke eksporteret fra '${stmt.source}'`);
+            if (!pair) return fejlAt(stmt, `'${name}' er ikke eksporteret fra '${stmt.source}'`);
             env.define(name, pair.value, false);
         }
         return NIKS;
     }
 
-    return new Fejl(`ukendt importkilde: '${stmt.source}' — brug "gemyt" eller en relativ sti`);
+    return fejlAt(stmt, `ukendt importkilde: '${stmt.source}' — brug "gemyt" eller en relativ sti`);
 }
 
-function handleExport(stmt: ExportStatement, env: Environment, ctx: ModuleContext): Obj {
+function handleExport(stmt: ExportStatement, env: Environment, ctx: ModuleContext): EvalResult {
     const val = evaluate(stmt.value, env);
     if (erSignal(val)) return val;
     env.define(stmt.name.value, val, false);
@@ -666,8 +675,12 @@ function handleExport(stmt: ExportStatement, env: Environment, ctx: ModuleContex
     return NIKS;
 }
 
-export function evaluateProgram(program: Program, env: Environment, ctx: ModuleContext): Obj {
-    let result: Obj = NIKS;
+export function evaluateProgram(
+    program: Program,
+    env: Environment,
+    ctx: ModuleContext
+): EvalResult {
+    let result: EvalResult = NIKS;
     for (const stmt of program.statements) {
         if (stmt.kind === "ImportStatement") {
             result = handleImport(stmt, env, ctx);
@@ -684,24 +697,29 @@ export function evaluateProgram(program: Program, env: Environment, ctx: ModuleC
             // makes the script exit non-zero instead of silently "succeeding"
             // with the øv value as its program result.
             if (inner instanceof Resultat && !inner.erFlot) {
-                return new Fejl(
+                return fejlAt(
+                    stmt,
                     `stram bobbede op til toppen af programmet: ${inner.value.tekst()}`
                 );
             }
             return inner;
+        }
+        // A BrydSignal at top-level means `brud` was used outside any loop.
+        if (result.kind === OBJ.BRYDSIGNAL) {
+            return fejlAt(stmt, "brud uden for løkke");
         }
         if (erFejl(result)) return result;
     }
     return result;
 }
 
-export function evaluate(node: Statement | Expression, env: Environment): Obj {
+export function evaluate(node: Statement | Expression, env: Environment): EvalResult {
     switch (node.kind) {
         case "ExpressionStatement":
             return evaluate(node.expression, env);
 
         case "BlockStatement": {
-            let result: Obj = NIKS;
+            let result: EvalResult = NIKS;
             for (const stmt of node.statements) {
                 result = evaluate(stmt, env);
                 if (erSignal(result)) return result;
@@ -747,13 +765,13 @@ export function evaluate(node: Statement | Expression, env: Environment): Obj {
             if (val !== undefined) return val;
             const builtin = BUILTINS.get(node.value);
             if (builtin !== undefined) return builtin;
-            return new Fejl(`'${node.value}' er ikke defineret`);
+            return fejlAt(node, `'${node.value}' er ikke defineret`);
         }
 
         case "PrefixExpression": {
             const right = evaluate(node.right, env);
             if (erSignal(right)) return right;
-            return evalPrefixExpression(node.operator, right);
+            return evalPrefixExpression(node, right);
         }
 
         case "InfixExpression": {
@@ -761,7 +779,7 @@ export function evaluate(node: Statement | Expression, env: Environment): Obj {
             if (erSignal(left)) return left;
             const right = evaluate(node.right, env);
             if (erSignal(right)) return right;
-            return evalInfixExpression(node.operator, left, right);
+            return evalInfixExpression(node, left, right);
         }
 
         case "AssignExpression": {
@@ -772,7 +790,7 @@ export function evaluate(node: Statement | Expression, env: Environment): Obj {
 
         case "ArrayLiteral": {
             const elements = evalExpressions(node.elements, env);
-            if (elements.length === 1 && erSignal(elements[0]!)) return elements[0]!;
+            if (!Array.isArray(elements)) return elements;
             return new Liste(elements);
         }
 
@@ -783,7 +801,7 @@ export function evaluate(node: Statement | Expression, env: Environment): Obj {
                 if (erSignal(key)) return key;
                 const hashKey = getHashKey(key);
                 if (hashKey === null)
-                    return new Fejl(`kan ikke bruge ${key.kind} som ordbog-nøgle`);
+                    return fejlAt(keyExpr, `kan ikke bruge ${key.kind} som ordbog-nøgle`);
                 const value = evaluate(valueExpr, env);
                 if (erSignal(value)) return value;
                 pairs.set(hashKey, {key, value});
@@ -796,13 +814,13 @@ export function evaluate(node: Statement | Expression, env: Environment): Obj {
             if (erSignal(left)) return left;
             const index = evaluate(node.index, env);
             if (erSignal(index)) return index;
-            return evalIndexExpression(left, index);
+            return evalIndexExpression(node, left, index);
         }
 
         case "DotExpression": {
             const left = evaluate(node.left, env);
             if (erSignal(left)) return left;
-            return evalDotExpression(left, node.field.value);
+            return evalDotExpression(node, left);
         }
 
         case "PipeExpression": {
@@ -813,13 +831,13 @@ export function evaluate(node: Statement | Expression, env: Environment): Obj {
                 const fn = evaluate(node.right.function, env);
                 if (erSignal(fn)) return fn;
                 const args = evalExpressions(node.right.args, env);
-                if (args.length === 1 && erSignal(args[0]!)) return args[0]!;
-                return applyFunction(fn, [left, ...args]);
+                if (!Array.isArray(args)) return args;
+                return applyFunctionAt(node, fn, [left, ...args]);
             }
 
             const fn = evaluate(node.right, env);
             if (erSignal(fn)) return fn;
-            return applyFunction(fn, [left]);
+            return applyFunctionAt(node, fn, [left]);
         }
 
         case "IfExpression": {
@@ -834,14 +852,15 @@ export function evaluate(node: Statement | Expression, env: Environment): Obj {
         }
 
         case "WhileExpression": {
-            let result: Obj = NIKS;
+            let result: Value = NIKS;
             while (true) {
                 const condition = evaluate(node.condition, env);
-                if (erFejl(condition)) return condition;
+                if (erSignal(condition)) return condition;
                 if (!isTruthy(condition)) break;
-                result = evaluate(node.body, env);
-                if (result.kind === OBJ.BRYDSIGNAL) return NIKS;
-                if (result.kind === OBJ.RETURVÆRDI || erFejl(result)) return result;
+                const body = evaluate(node.body, env);
+                if (body.kind === OBJ.BRYDSIGNAL) return NIKS;
+                if (erSignal(body)) return body;
+                result = body;
             }
             return result;
         }
@@ -849,28 +868,30 @@ export function evaluate(node: Statement | Expression, env: Environment): Obj {
         case "ForEachExpression": {
             const iterable = evaluate(node.iterable, env);
             if (erSignal(iterable)) return iterable;
-            let result: Obj = NIKS;
+            let result: Value = NIKS;
 
             if (iterable instanceof Liste) {
                 for (let i = 0; i < iterable.elements.length; i++) {
                     const innerEnv = createEnclosedEnvironment(env);
                     innerEnv.define(node.value.value, iterable.elements[i]!, true);
                     if (node.index) innerEnv.define(node.index.value, new Tal(i), true);
-                    result = evaluate(node.body, innerEnv);
-                    if (result.kind === OBJ.BRYDSIGNAL) return NIKS;
-                    if (result.kind === OBJ.RETURVÆRDI || erFejl(result)) return result;
+                    const body = evaluate(node.body, innerEnv);
+                    if (body.kind === OBJ.BRYDSIGNAL) return NIKS;
+                    if (erSignal(body)) return body;
+                    result = body;
                 }
             } else if (iterable instanceof Tekst) {
                 for (let i = 0; i < iterable.value.length; i++) {
                     const innerEnv = createEnclosedEnvironment(env);
                     innerEnv.define(node.value.value, new Tekst(iterable.value[i]!), true);
                     if (node.index) innerEnv.define(node.index.value, new Tal(i), true);
-                    result = evaluate(node.body, innerEnv);
-                    if (result.kind === OBJ.BRYDSIGNAL) return NIKS;
-                    if (result.kind === OBJ.RETURVÆRDI || erFejl(result)) return result;
+                    const body = evaluate(node.body, innerEnv);
+                    if (body.kind === OBJ.BRYDSIGNAL) return NIKS;
+                    if (erSignal(body)) return body;
+                    result = body;
                 }
             } else {
-                return new Fejl(`${iterable.kind} er ikke itererbar`);
+                return fejlAt(node.iterable, `${iterable.kind} er ikke itererbar`);
             }
 
             return result;
@@ -882,11 +903,11 @@ export function evaluate(node: Statement | Expression, env: Environment): Obj {
 
             for (const arm of node.arms) {
                 const matchEnv = createEnclosedEnvironment(env);
-                if (matchesPattern(subject, arm.pattern, matchEnv)) {
-                    return evaluate(arm.body, matchEnv);
-                }
+                const matched = matchesPattern(subject, arm.pattern, matchEnv);
+                if (typeof matched !== "boolean") return matched;
+                if (matched) return evaluate(arm.body, matchEnv);
             }
-            return new Fejl(`prøv: intet mønster matchede ${subject.tekst()}`);
+            return fejlAt(node, `prøv: intet mønster matchede ${subject.tekst()}`);
         }
 
         case "FunctionLiteral":
@@ -896,8 +917,8 @@ export function evaluate(node: Statement | Expression, env: Environment): Obj {
             const fn = evaluate(node.function, env);
             if (erSignal(fn)) return fn;
             const args = evalExpressions(node.args, env);
-            if (args.length === 1 && erSignal(args[0]!)) return args[0]!;
-            return applyFunction(fn, args);
+            if (!Array.isArray(args)) return args;
+            return applyFunctionAt(node, fn, args);
         }
 
         case "OkExpression": {
@@ -914,11 +935,19 @@ export function evaluate(node: Statement | Expression, env: Environment): Obj {
 
         case "ImportStatement":
         case "ExportStatement":
-            return new Fejl("ind/ud kan kun bruges på øverste niveau");
+            return fejlAt(node, "ind/ud kan kun bruges på øverste niveau");
     }
 }
 
-function matchesPattern(subject: Obj, pattern: Expression, env: Environment): boolean {
+// Returns a Signal to propagate if pattern evaluation fails with Fejl;
+// otherwise returns a boolean indicating whether the pattern matched.
+// Previously a Fejl from pattern evaluation was silently swallowed as "no
+// match" — that made pattern-eval errors invisible. Now they propagate.
+function matchesPattern(
+    subject: Value,
+    pattern: Expression,
+    env: Environment
+): boolean | Signal {
     if (pattern.kind === "OkExpression" && pattern.value.kind === "Identifier") {
         if (subject instanceof Resultat && subject.erFlot) {
             env.define(pattern.value.value, subject.value, true);
@@ -941,11 +970,11 @@ function matchesPattern(subject: Obj, pattern: Expression, env: Environment): bo
         return true;
     }
     const patternVal = evaluate(pattern, env);
-    if (erSignal(patternVal)) return false;
+    if (erSignal(patternVal)) return patternVal;
     return objEqual(subject, patternVal);
 }
 
-function isTruthy(obj: Obj): boolean {
+function isTruthy(obj: Value): boolean {
     switch (obj.kind) {
         case OBJ.NIKS:
             return false;
@@ -960,7 +989,7 @@ function isTruthy(obj: Obj): boolean {
 
 // Structural for Liste/Ordbog/Resultat; reference for Funktion (closures carry
 // env — comparing bodies is both expensive and wrong).
-function objEqual(a: Obj, b: Obj): boolean {
+function objEqual(a: Value, b: Value): boolean {
     return objEqualInner(a, b, null);
 }
 
@@ -968,7 +997,7 @@ function objEqual(a: Obj, b: Obj): boolean {
 // re-enter with the same pair, return true — we assume equality until proven
 // otherwise, and a cycle that closes consistently on both sides is equal.
 // Allocate the map lazily so primitive comparisons stay allocation-free.
-function objEqualInner(a: Obj, b: Obj, seen: Map<Obj, Set<Obj>> | null): boolean {
+function objEqualInner(a: Value, b: Value, seen: Map<Value, Set<Value>> | null): boolean {
     if (a === b) return true;
     if (a.kind !== b.kind) return false;
     switch (a.kind) {
@@ -1022,10 +1051,10 @@ function objEqualInner(a: Obj, b: Obj, seen: Map<Obj, Set<Obj>> | null): boolean
 // Returns null if (a, b) is already on the stack (cycle — caller treats as
 // equal). Otherwise returns the seen-map with (a, b) added, allocating lazily.
 function markSeen(
-    a: Obj,
-    b: Obj,
-    seen: Map<Obj, Set<Obj>> | null
-): Map<Obj, Set<Obj>> | null {
+    a: Value,
+    b: Value,
+    seen: Map<Value, Set<Value>> | null
+): Map<Value, Set<Value>> | null {
     if (seen) {
         const bs = seen.get(a);
         if (bs?.has(b)) return null;
@@ -1033,18 +1062,18 @@ function markSeen(
         else seen.set(a, new Set([b]));
         return seen;
     }
-    const m = new Map<Obj, Set<Obj>>();
+    const m = new Map<Value, Set<Value>>();
     m.set(a, new Set([b]));
     return m;
 }
 
-function evalPrefixExpression(operator: string, right: Obj): Obj {
-    switch (operator) {
+function evalPrefixExpression(node: PrefixExpression, right: Value): EvalResult {
+    switch (node.operator) {
         case "ikke":
             return nativeBoolTilObj(!isTruthy(right));
         case "-":
             if (right instanceof Tal) return new Tal(-right.value);
-            return new Fejl(`ukendt operator: -${right.kind}`);
+            return fejlAt(node, `ukendt operator: -${right.kind}`);
         case "stram":
             if (right instanceof Resultat) {
                 if (right.erFlot) return right.value;
@@ -1052,11 +1081,11 @@ function evalPrefixExpression(operator: string, right: Obj): Obj {
             }
             return right;
         default:
-            return new Fejl(`ukendt præfiks operator: ${operator}`);
+            return fejlAt(node, `ukendt præfiks operator: ${node.operator}`);
     }
 }
 
-function isCoercibleToTekst(obj: Obj): boolean {
+function isCoercibleToTekst(obj: Value): boolean {
     return (
         obj instanceof Tal ||
         obj instanceof Tekst ||
@@ -1065,9 +1094,10 @@ function isCoercibleToTekst(obj: Obj): boolean {
     );
 }
 
-function evalInfixExpression(operator: string, left: Obj, right: Obj): Obj {
+function evalInfixExpression(node: InfixExpression, left: Value, right: Value): Value | Fejl {
+    const operator = node.operator;
     if (left instanceof Tal && right instanceof Tal) {
-        return evalTalInfixExpression(operator, left, right);
+        return evalTalInfixExpression(node, left, right);
     }
     // `+` coerces any primitive (Tal/Tekst/Sandhed/Niks) to Tekst when at
     // least one side is already Tekst. Composite types (Liste, Ordbog) and
@@ -1087,7 +1117,7 @@ function evalInfixExpression(operator: string, left: Obj, right: Obj): Obj {
             case "!=":
                 return nativeBoolTilObj(left.value !== right.value);
             default:
-                return new Fejl(`ukendt operator: ${left.kind} ${operator} ${right.kind}`);
+                return fejlAt(node, `ukendt operator: ${left.kind} ${operator} ${right.kind}`);
         }
     }
     switch (operator) {
@@ -1101,13 +1131,14 @@ function evalInfixExpression(operator: string, left: Obj, right: Obj): Obj {
             return isTruthy(left) ? left : right;
         default:
             if (left.kind !== right.kind) {
-                return new Fejl(`type mismatch: ${left.kind} ${operator} ${right.kind}`);
+                return fejlAt(node, `type mismatch: ${left.kind} ${operator} ${right.kind}`);
             }
-            return new Fejl(`ukendt operator: ${left.kind} ${operator} ${right.kind}`);
+            return fejlAt(node, `ukendt operator: ${left.kind} ${operator} ${right.kind}`);
     }
 }
 
-function evalTalInfixExpression(operator: string, left: Tal, right: Tal): Obj {
+function evalTalInfixExpression(node: InfixExpression, left: Tal, right: Tal): Value | Fejl {
+    const operator = node.operator;
     switch (operator) {
         case "+":
             return new Tal(left.value + right.value);
@@ -1116,10 +1147,10 @@ function evalTalInfixExpression(operator: string, left: Tal, right: Tal): Obj {
         case "*":
             return new Tal(left.value * right.value);
         case "/":
-            if (right.value === 0) return new Fejl("det kan man da ikke");
+            if (right.value === 0) return fejlAt(node, "det kan man da ikke");
             return new Tal(left.value / right.value);
         case "%":
-            if (right.value === 0) return new Fejl("det kan man da ikke");
+            if (right.value === 0) return fejlAt(node, "det kan man da ikke");
             return new Tal(left.value % right.value);
         case "<":
             return nativeBoolTilObj(left.value < right.value);
@@ -1134,11 +1165,15 @@ function evalTalInfixExpression(operator: string, left: Tal, right: Tal): Obj {
         case "!=":
             return nativeBoolTilObj(left.value !== right.value);
         default:
-            return new Fejl(`ukendt operator: ${left.kind} ${operator} ${right.kind}`);
+            return fejlAt(node, `ukendt operator: ${left.kind} ${operator} ${right.kind}`);
     }
 }
 
-function evalIndexExpression(left: Obj, index: Obj): Obj {
+function evalIndexExpression(
+    node: IndexExpression,
+    left: Value,
+    index: Value
+): Value | Fejl {
     if (left instanceof Liste && index instanceof Tal) {
         const i = index.value;
         if (!Number.isInteger(i) || i < 0 || i >= left.elements.length) return NIKS;
@@ -1146,7 +1181,8 @@ function evalIndexExpression(left: Obj, index: Obj): Obj {
     }
     if (left instanceof Ordbog) {
         const hashKey = getHashKey(index);
-        if (hashKey === null) return new Fejl(`kan ikke bruge ${index.kind} som ordbog-nøgle`);
+        if (hashKey === null)
+            return fejlAt(node.index, `kan ikke bruge ${index.kind} som ordbog-nøgle`);
         const pair = left.pairs.get(hashKey);
         return pair !== undefined ? pair.value : NIKS;
     }
@@ -1155,17 +1191,18 @@ function evalIndexExpression(left: Obj, index: Obj): Obj {
         if (!Number.isInteger(i) || i < 0 || i >= left.value.length) return NIKS;
         return new Tekst(left.value[i]!);
     }
-    return new Fejl(`indeksering ikke understøttet: ${left.kind}[${index.kind}]`);
+    return fejlAt(node, `indeksering ikke understøttet: ${left.kind}[${index.kind}]`);
 }
 
-function evalDotExpression(left: Obj, field: string): Obj {
+function evalDotExpression(node: DotExpression, left: Value): Value | Fejl {
+    const field = node.field.value;
     if (left instanceof Resultat) {
         if (field === "afklæd") {
             const captured = left;
-            return new Indbygget((): Obj => {
+            const dotNode = node;
+            return new Indbygget((): Value | Fejl => {
                 if (!captured.erFlot)
-                    // TODO line/col could be nice here
-                    return new Fejl(`afklæd kaldt på øv(${captured.value.tekst()})`);
+                    return fejlAt(dotNode, `afklæd kaldt på øv(${captured.value.tekst()})`);
                 return captured.value;
             }, "afklæd");
         }
@@ -1184,13 +1221,13 @@ function evalDotExpression(left: Obj, field: string): Obj {
         if (pair !== undefined) return pair.value;
         return NIKS;
     }
-    return new Fejl(`${left.kind} har ikke egenskaben '${field}'`);
+    return fejlAt(node, `${left.kind} har ikke egenskaben '${field}'`);
 }
 
-function evalAssign(target: Expression, value: Obj, env: Environment): Obj {
+function evalAssign(target: Expression, value: Value, env: Environment): EvalResult {
     if (target.kind === "Identifier") {
         const err = env.update(target.value, value);
-        if (err !== null) return new Fejl(err);
+        if (err !== null) return fejlAt(target, err);
         return value;
     }
     if (target.kind === "IndexExpression") {
@@ -1201,18 +1238,19 @@ function evalAssign(target: Expression, value: Obj, env: Environment): Obj {
         if (left instanceof Liste && index instanceof Tal) {
             const i = index.value;
             if (!Number.isInteger(i) || i < 0 || i >= left.elements.length) {
-                return new Fejl(`indeks ud af grænser: ${i}`);
+                return fejlAt(target.index, `indeks ud af grænser: ${i}`);
             }
             left.elements[i] = value;
             return value;
         }
         if (left instanceof Ordbog) {
             const hashKey = getHashKey(index);
-            if (hashKey === null) return new Fejl(`kan ikke bruge ${index.kind} som ordbog-nøgle`);
+            if (hashKey === null)
+                return fejlAt(target.index, `kan ikke bruge ${index.kind} som ordbog-nøgle`);
             left.pairs.set(hashKey, {key: index, value});
             return value;
         }
-        return new Fejl(`kan ikke indeksere ${left.kind}`);
+        return fejlAt(target, `kan ikke indeksere ${left.kind}`);
     }
     if (target.kind === "DotExpression") {
         const left = evaluate(target.left, env);
@@ -1222,22 +1260,28 @@ function evalAssign(target: Expression, value: Obj, env: Environment): Obj {
             left.pairs.set(hashKey, {key: new Tekst(target.field.value), value});
             return value;
         }
-        return new Fejl(`kan ikke tildele felt på ${left.kind}`);
+        return fejlAt(target, `kan ikke tildele felt på ${left.kind}`);
     }
-    return new Fejl(`kan ikke tildele til ${target.kind}`);
+    return fejlAt(target, `kan ikke tildele til ${target.kind}`);
 }
 
-function evalExpressions(exprs: Expression[], env: Environment): Obj[] {
-    const result: Obj[] = [];
+// Returns either the full array of evaluated arg values OR the first Signal
+// encountered (any kind — Fejl/ReturVærdi/BrydSignal). Callers narrow with
+// Array.isArray: array → continue, Signal → propagate.
+function evalExpressions(exprs: Expression[], env: Environment): Value[] | Signal {
+    const result: Value[] = [];
     for (const expr of exprs) {
         const val = evaluate(expr, env);
-        if (erSignal(val)) return [val];
+        if (erSignal(val)) return val;
         result.push(val);
     }
     return result;
 }
 
-function applyFunction(fn: Obj, args: Obj[]): Obj {
+// Internal call — produces unsituated Fejls. Used by builtins that invoke
+// user functions (liste.slankekur, etc.), since the builtin's own outer
+// CallExpression will stamp location on any Fejl that bubbles up.
+function applyFunction(fn: Value, args: Value[]): Value | Fejl {
     if (fn instanceof Funktion) {
         const enclosedEnv = createEnclosedEnvironment(fn.env);
         for (let i = 0; i < fn.params.length; i++) {
@@ -1245,10 +1289,21 @@ function applyFunction(fn: Obj, args: Obj[]): Obj {
         }
         const result = evaluate(fn.body, enclosedEnv);
         if (result.kind === OBJ.RETURVÆRDI) return (result as ReturVærdi).value;
+        if (result.kind === OBJ.BRYDSIGNAL) return new Fejl("brud uden for løkke");
+        if (erFejl(result)) return result;
         return result;
     }
     if (fn instanceof Indbygget) {
         return fn.fn(...args);
     }
     return new Fejl(`${fn.kind} er ikke en funktion`);
+}
+
+// External call — stamps location from the call site onto any Fejl that
+// bubbles out. This is what the evaluator's CallExpression/PipeExpression
+// cases use to turn "what went wrong" into "what went wrong at path:line:col".
+function applyFunctionAt(callSite: Expression, fn: Value, args: Value[]): Value | Fejl {
+    const result = applyFunction(fn, args);
+    if (result instanceof Fejl) return stampLocation(result, callSite);
+    return result;
 }

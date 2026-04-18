@@ -37,6 +37,11 @@ const ctx = createModuleContext(path.dirname(resolved));
 const result = evaluateProgram(program, env, ctx);
 
 if (result instanceof Fejl) {
-    console.error(result.tekst());
+    if (result.location) {
+        const {line, col} = result.location;
+        console.error(`${resolved}:${line}:${col}: Fejl: ${result.message}`);
+    } else {
+        console.error(result.tekst());
+    }
     process.exit(1);
 }

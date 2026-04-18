@@ -209,7 +209,7 @@ export interface ErrExpression extends Node {
     value: Expression;
 }
 
-const ZERO_TOKEN: Token = {kind: 0, literal: "", line: 0, col: 0};
+const ZERO_TOKEN: Token = {kind: 0, literal: "", line: 0, col: 0, offset: 0, length: 0};
 
 export function makeProgram(statements: Statement[] = []): Program {
     return {statements};

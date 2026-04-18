@@ -78,6 +78,8 @@ export type Token = {
     literal: string;
     line: number;
     col: number;
+    offset: number;
+    length: number;
 };
 
 export function tokenName(kind: TokenKind): string {
