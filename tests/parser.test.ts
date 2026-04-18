@@ -524,7 +524,7 @@ describe("OperatorPrecedence", () => {
     // Uses stringify output to verify precedence via parenthesisation
     const tests: Array<{input: string; expected: string}> = [
         {input: "-a * b", expected: "((-a) * b);"},
-        {input: "ikke -a", expected: "(ikke(-a));"},
+        {input: "ikke -a", expected: "(ikke (-a));"},
         {input: "a + b + c", expected: "((a + b) + c);"},
         {input: "a + b - c", expected: "((a + b) - c);"},
         {input: "a * b * c", expected: "((a * b) * c);"},
@@ -537,7 +537,7 @@ describe("OperatorPrecedence", () => {
         {input: "(5 + 5) * 2", expected: "((5 + 5) * 2);"},
         {input: "2 / (5 + 5)", expected: "(2 / (5 + 5));"},
         {input: "-(5 + 5)", expected: "(-(5 + 5));"},
-        {input: "ikke (ja == ja)", expected: "(ikke(ja == ja));"},
+        {input: "ikke (ja == ja)", expected: "(ikke (ja == ja));"},
         {input: "a + sæt(b * c) + d", expected: "((a + sæt((b * c))) + d);"},
         {input: "myArray[1 + 1]", expected: "(myArray[(1 + 1)]);"},
     ];

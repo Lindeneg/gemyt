@@ -469,8 +469,10 @@ export function stringify(node: Statement | Expression): string {
         }
         case "AssignExpression":
             return `(${stringify(node.target)} = ${stringify(node.value)})`;
-        case "PrefixExpression":
-            return `(${node.operator}${stringify(node.right)})`;
+        case "PrefixExpression": {
+            const sep = /^[A-Za-zÆØÅæøå_]/.test(node.operator) ? " " : "";
+            return `(${node.operator}${sep}${stringify(node.right)})`;
+        }
         case "InfixExpression":
             return `(${stringify(node.left)} ${node.operator} ${stringify(node.right)})`;
         case "IfExpression": {
